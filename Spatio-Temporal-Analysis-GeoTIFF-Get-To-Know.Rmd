@@ -1,0 +1,167 @@
+---
+title: "Spatio Temporal Analysis Of Sustainability Data"
+subtitle: Bachelor Thesis in Computational Statistics
+author: 'Marijana Petojevic '
+date: "29.07.2024"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+---
+
+This is a test file for trying out possibilities with GeoTIF data.
+
+1.  **Bind all GeoTIF Data into a Dataframe**
+
+-   First I created `txt` file with list all `GeoTIF` images regarding Tree Cover Gain in 2000-2020, files can be downloaded [here](https://glad.umd.edu/users/Potapov/GLCLUC2020/Forest_height_gain_2000_2020/) and due to large memory consumption I won't be uploading them to GitHub. This required me to download all these files and find an aggregation factor with which it was possible to join all of them into one dataframe which could be used for further visualization. Here I have to note that memory limit associated with an R session is set to be 13GB and cannot be exceeded. Smaller factors such es 10, 20, 30 resulted in the following process of converting the rasters into data frames to fill out sessions memory very fast and to brake the session resulting in R studio being forced to shut down and delete used memory. The one factor whit which it was possible was 60, where it took some time for the process to be accomplished, but it still was taking a lot of time to process all `GeoTIF` images.
+-   The resulting `csv` file is appended in the git repository and you can take a look into it for further information. To sum it up, it ended being a 2.7GB data set with 3 variables: `x, y` coordinates and third variable which represents a percentage of tree cover growth taking years 2000 and 2020 into comparison. What "disappointed" me is that there is no data for each individual year but just the growth factor when the two years are taken into comparison. Having data for all individual years - how that growth factor was increasing - would allow me to make a map animation showing how this growth changed over years. This way there is no possibility to make such animations, the only thing that could possible be done is to make models which would predict tree growth in future (lets say in next 20 years because this data set is based on 20 years). I think this would also be challenging to do, not because we need to make an prediction model, but because the data set is really big and everything I tried to do with it in singular R session forced the session to break, since the set ended up having multiple millions of rows.
+-   Following chunk shows how I constructed the data set:
+
+```{r}
+#Don't run this, it will take too long, rather run other chunks, csv file is appended to the repository
+library(terra)
+library(dplyr)
+
+file_list <- readLines("netgain_files_list.txt")
+
+filenames <- sapply(strsplit(file_list, "\\s+"), `[`, 2)
+
+df_list <- list()
+
+for (file in filenames) {
+  dat <- rast(file)
+  ra <- aggregate(dat, fact = 60)
+  df <- as.data.frame(ra, xy = TRUE)
+  df_list[[file]] <- df
+}
+
+final_df <- bind_rows(df_list)
+str(final_df)
+write.csv(final_df, "combined_raster_data.csv", row.names = FALSE)
+
+```
+
+2.  **Plot the GeoTIF images**
+
+-   Next thing I tried to do when seeing how unresponsive my RStudio became when dealing with such big data, was to try to increase the factor, sacrificing the quality of the visualizations. I increased the aggregation factor to 100 and came up with a new `combined_df` dataframe:
+
+```{r}
+library(terra)
+library(ggplot2)
+library(dplyr)
+
+file_list <- readLines("netgain_files_list.txt")
+
+filenames <- sapply(strsplit(file_list, "\\s+"), `[`, 2)
+filenames <- paste0("GeoTif-Data/", filenames)
+
+df_list <- list()
+
+for (file in filenames) {
+  dat <- rast(file)
+  ra <- aggregate(dat, fact = 100)
+  df <- as.data.frame(ra, xy = TRUE)
+  df_list <- append(df_list, list(df))
+  print(paste("Processed file:", file))
+}
+
+combined_df <- bind_rows(df_list)
+```
+
+-   I had to convert the third column - growth factor - to numeric data in order to plot the data using `ggplot`. I have to note here that this was just try and the plot following chunk produces can be made much nicer, but I wanted to see how R would react to such a large data frame which again contained nearly 42 million rows (which is still much less than what the previous dataframe and corresponding `csv` file have. To note here is also the process of ploting these data will also take some time, but the map will be generated at the end,
+
+```{r}
+value_column <- names(combined_df)[3]
+combined_df[[value_column]] <- as.numeric(combined_df[[value_column]])
+
+```
+
+```{r}
+ggplot(combined_df, aes(x = x, y = y, fill = names(combined_df)[3])) + 
+  geom_raster() + 
+  scale_fill_viridis_c() +
+  labs(title = "Tree Growth (Net Gain) from 2000 to 2020", fill = "Net Gain") + 
+  theme_minimal()
+```
+
+3.  **Responsive maps with GeoTIF data**
+
+-   Last thing i wanted to try with `GeoTIF` files was to try to make an responsive map which could be zoomed in and out, as I thought that this feature would be nice to have for a Shiny App. The following chunk shows how I was aiming to do so:
+
+```{r}
+library(terra)
+library(leaflet)
+library(dplyr)
+library(viridis)
+
+file_list <- readLines("netgain_files_list.txt")
+
+filenames <- sapply(strsplit(file_list, "\\s+"), `[`, 2)
+
+df_list <- list()
+
+for (file in filenames) {
+  dat <- rast(file)
+  
+  if (is.na(crs(dat))) {
+    crs(dat) <- "+proj=longlat +datum=WGS84 +no_defs"
+  }
+  
+  dat <- project(dat, "+proj=longlat +datum=WGS84 +no_defs")
+  
+  ra <- aggregate(dat, fact = 100)
+  
+  df <- as.data.frame(ra, xy = TRUE)
+  
+  df_list <- append(df_list, list(df))
+  
+  print(paste("Processed file:", file))
+}
+
+combined_df <- bind_rows(df_list)
+
+str(combined_df)
+
+value_column <- names(combined_df)[3]
+
+combined_df[[value_column]] <- as.numeric(combined_df[[value_column]])
+
+combined_raster <- rast(combined_df, type = "xyz")
+
+pal <- colorNumeric(palette = "viridis", domain = combined_df[[value_column]])
+
+leaflet() %>%
+  addTiles() %>%
+  addRasterImage(combined_raster, colors = pal, opacity = 0.8) %>%
+  addLegend(pal = pal, values = combined_df[[value_column]], title = "Net Gain") %>%
+  setView(lng = 0, lat = 0, zoom = 2)
+
+```
+
+-   The problem here was that the file processing took whole day. I started the process at 11am and it was processing the files all day long. I went to bad and when I woke up next morning my laptop restarted and process didn't finish. I wouldn't say that there is a problem with my laptop as it's freshly bought with INTEL i7 core and 32GB of RAM memory, but I'm not sure if RStudio is the best environment for processing such large `GeoTIF` files, especially considering there are exactly 261 of them.
+
+### Conclusion
+
+I still didn't take a proper look at Tree cover loss 2000-2023 data which can be downloaded [here](https://storage.googleapis.com/earthenginepartners-hansen/GFC-2023-v1.11/download.html) and which is visualized on Global Forest Watch [here](https://www.globalforestwatch.org/map/?map=eyJkYXRhc2V0cyI6W3siZGF0YXNldCI6InBvbGl0aWNhbC1ib3VuZGFyaWVzIiwibGF5ZXJzIjpbImRpc3B1dGVkLXBvbGl0aWNhbC1ib3VuZGFyaWVzIiwicG9saXRpY2FsLWJvdW5kYXJpZXMiXSwib3BhY2l0eSI6MSwidmlzaWJpbGl0eSI6dHJ1ZX0seyJkYXRhc2V0IjoidHJlZS1jb3Zlci1sb3NzIiwibGF5ZXJzIjpbInRyZWUtY292ZXItbG9zcyJdLCJvcGFjaXR5IjoxLCJ2aXNpYmlsaXR5Ijp0cnVlLCJ0aW1lbGluZVBhcmFtcyI6eyJzdGFydERhdGUiOiIyMDAxLTAxLTAxIiwiZW5kRGF0ZSI6IjIwMjMtMTItMzEiLCJ0cmltRW5kRGF0ZSI6IjIwMjMtMTItMzEifX1dfQ%3D%3D). This data is already animated on Global Forest watch, so I suppose the tree cover loss data set contains tree loss information for all years in span of 200-2023, the only problem again is that this data is again stored in `GeoTIF` files and would require conversion in data frames.
+
+My biggest concern with these data sets is that Global Forest Watch already has done analysis with those satellite images, meaning they already visualized the data and made interactive maps that can be zoomed in and out and where further analysis of smaller map tiles can be performed using their own integrated tools:
+
+![](images/Screenshot%20from%202024-08-05%2014-18-47.png)
+
+My suggestion would be to still use the `GeoTIF` images for the last part of the work - for the Shiny App. It would be for sure possible to visualize this data in an isolated environment, and let the users play with it showing different parts of the world map. I think there wouldn't be anything new done with these data what Global Forest Watch hasn't already done with their maps, but I still think that it might be a nice extension to the analysis performed on tabular data sets I found on Kaggle and sent you in the previous Email. I'm still working on finding further data sets where conclusions for tree loss/gain can be drown from the dependence on various variables and factors such as industrial zones that might have appeared in the time span causing a tree loss over years, mines, how various soil types affect the tree growth or how countries development index interacts with the tree growth/loss. Cover type data set can be downloaded from [here](https://archive.ics.uci.edu/dataset/31/covertype), and I appended it to my previous email to you.
+
+One possible thing that comes to my mind based on seeing the data set i was able to generate from `GeoTIF` images is to extract all rows where tree growth was captured, since points where no tree growth was captured have the third variable set to 0 (there are much more samples like this in the data frame) and than to use this data for the further analysis, possibly trying to compare the geographical coordinates `x and y` to other factors found in other data sets that possibly caused growth/loss of tree cover. There are nearly 13 million of such points where the growth was captured:
+
+```{r}
+filtered_df <- combined_df %>% filter(.data[[value_column]] != 0)
+str(filtered_df)
+```
+
+This still stays in question, because I don't know if I will be able to find data sets with exact coordinates of industrial zones, mining spots and so on, but I will give my best to do so.
+
+My idea would be to start my analysis using the two data sets I was able to find:
+
+1.  Global Forest Data: 2001-2022: <https://www.kaggle.com/datasets/karnikakapoor/global-forest-data-2001-2022>
+2.  tree Cover Loss: 2001-2020: <https://www.kaggle.com/datasets/kkhandekar/tree-cover-loss-20012020>
+
+These repositories contain different data sets inside of them which have significant data and variables which could be used for analysis. It's true that it's based on countries and not on exact geographical coordinates, but it in my opinion it would be a good starting point for the analysis. In the meantime, when I have done my analysis based on the countries I would like to do some base analysis using the exact coordinates introduced by the Global Forest Data in the `GeoTIF` format. I also might make a prediction model for the next years to see how tree cover growth/loss would be in next 20 years and for that a nice visualizations and animations would be possible to make, the only thing is I would have to do it isolated form other analysis and possibly not in RStudio so that I don't exceed the limit of an RStudio session. A possibility would be using JupyterHub and an R image. I work at dataLAB at TU Wien which is part of HPC Group at TU-it and specializes at Jupyter As a Service. I think my colleagues could help me to set up a JupyterHub instance to work with such data.
