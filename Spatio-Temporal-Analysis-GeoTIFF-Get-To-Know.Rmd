@@ -18,7 +18,7 @@ This is a test file for trying out possibilities with GeoTIF data.
 -   Following chunk shows how I constructed the data set:
 
 ```{r}
-#Don't run this, it will take too long, rather run other chunks, csv file is appended to the repository
+#Don't run this, it will take too long, rather run other chunks
 library(terra)
 library(dplyr)
 
