@@ -1,0 +1,1223 @@
+---
+title: "Spatio Temporal Analysis Of Sustainability Data"
+author: 'Marijana Petojevic '
+date: "29.07.2024"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+subtitle: Bachelor Thesis in Computational Statistics
+---
+
+To conduct a spatio-temporal analysis of tree cover change in a certain country between 2018 and 2023, we obtained geo-spatial data from the [Living Atlas](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=9.40600%2C45.75100%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0). This dataset provides annual land cover information, including tree cover, in a tile-based GeoTiff format. Living Atlas allows users to inspect various types of land cover through satellite images for the time span between 2018 and 2023, including *Trees, Water, Crops, Snow/Ice, Built Area, Clouds, Flooded Vegetation, Bare Ground and Rangeland.* More details about the data set can be found [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d).
+
+Since `GeoTIFF` data of the world is obtained in tiles and is very memory consuming, I decided to start my research based on certain countries of interest, which in our case was Austria. Wile inspecting the data and trying to construct informative visualizations, I ran into some problems with combining rasters that should cover the whole land of Austria. In order to fully resemble Austrian land, I had to download three tiles, but while trying to combine them into one big raster or processing them individually, a lot of data ended up missing, which shouldn't be the case, since the visualization on the website clearly shows data points in all Austrian areas. We are going to talk about this in second half of this report where I show problems I had with creation of maps for Austria.
+
+To fully test my ideas and see if a comprehensive analysis of `GeoTiff` data was possible, I decided to start this work with analysis of a country which is fully captured in only one tile - Serbia.
+
+Our first goal is to inspect tree gain and loss in country of Serbia taking years 2018 and 2023 into comparison. Reason we are taking 2018 into account is because [Land Cover dataset](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d) description pointed out that 2017 (the first year of measurements) shouldn't be taken into account due to its resemblance of fewer image sets. In order to fully observe whole Serbian land cover property we need to download only one tile which covers the whole aria. We are going to download these tiles for years 2018 and 2023 which we wish to compare:
+
+```{r}
+urls <- c(
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2018/34T_20180101-20190101.tif",
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2018/34T_20180101-20190101.tif"
+)
+```
+
+Having the needed download links we are going to programmatically download the tow files and save them into a dedicated folder inside of our working directory:
+
+```{r eval=FALSE, include=TRUE}
+for (url in urls) {
+  download.file(
+    url = url,
+    destfile = basename("SRB/" + url),
+    mode = "wb",
+    method = "wget"
+  )
+}
+```
+
+We are than proceeding with loading necessery libraries which will help us work with country data and `GeoTiff` images and their corresponding rasters. For those purposes we are going to use library `terra` ([Terra package](https://cran.r-project.org/web/packages/terra/terra.pdf)) for spatial data analysis, `sf` ([Sf package](https://cran.r-project.org/web/packages/sf/sf.pdf)) to work with simple features and conversions of spatial vector data and its projection, `exactextractr` ([Exactextractr package](https://cran.r-project.org/web/packages/exactextractr/exactextractr.pdf)) to accurately summarize raster values over polygonal areas fr zonal statistics and `rgeoboundaries` ([Rgeoboundaries package](https://cran.r-project.org/web/packages/rgeoboundaries/rgeoboundaries.pdf)) which provides access to the geoBoundaries international boundary database [here](https://www.geoboundaries.org/).
+
+For visualizations we are going to use `ggplot2`, `plotly` and `grid` packages.
+
+```{r}
+libs <- c(
+  "tidyr", "dplyr", "terra",
+  "sf", "exactextractr",
+  "rgeoboundaries", "ggplot2",
+  "plotly", "grid", "ggtern"
+)
+
+installed_libraries <- libs %in% rownames(
+  installed.packages()
+)
+
+if (any(installed_libraries == F)) {
+  install.packages(libs[!installed_libraries])
+}
+
+invisible(
+  lapply(
+    libs, library,
+    character.only = T
+  )
+)
+```
+
+### Loading Country Boundaries of Serbia
+
+For the purposes of this task we are going to load `sf` objects of both Serbia and Kosovo and bind them. The idea here was to see if this would work as expected and if we would get the right object once both objects are combined. We are going to load administrative bounds of level 1:
+
+```{r}
+serbia_sf <- rgeoboundaries::gb_adm1(
+  "SRB"
+)
+kosovo_sf <- rgeoboundaries::gb_adm1(
+  "XKX"
+)
+```
+
+We are going to use `terra::plot` function to see if the to objects were merged correctly:
+
+```{r}
+serbia_sf <- rbind(serbia_sf, kosovo_sf)
+terra::plot(serbia_sf)
+```
+
+### Loading Raster Files
+
+Next we are going to load the two `TIFF` files for years 2018 and 2023 into our working environment and convert them into rasters:
+
+```{r}
+raster_files_serbia <- list.files(
+  path = "SRB",
+  pattern = "tif",
+  full.names = T
+)
+
+raster_srb_2018 <- terra::rast(raster_files_serbia[1]) 
+raster_srb_2023 <- terra::rast(raster_files_serbia[2])
+
+```
+
+We have to check if our `shape file` object uses the same **C**oordinate **R**eference **S**ystem (CRS) as the rasters we just loaded. If the two CRS should be different, we are going to transform the Serbia's `shape file` to match CRS of the raster objects, so that the two overlap exactly.
+
+```{r}
+crs_raster <- terra::crs(raster_srb_2018)
+crs_shapefile <- sf::st_crs(serbia_sf)
+
+
+crs_raster
+crs_shapefile
+
+if (crs_raster != crs_shapefile) {
+  serbia_sf <- sf::st_transform(serbia_sf, crs = crs_raster)
+}
+
+```
+
+We are going to plot these two to make sure the coordinate systems are the same and that the country's boundaries can be plotted correctly over the raster object.
+
+```{r warning=FALSE}
+terra::plot(raster_srb_2018, main = "Raster and Shapefile Overlay")
+
+if (inherits(serbia_sf, "sf")) {
+  serbia_sf_sp <- sf::as_Spatial(serbia_sf)
+} else {
+  serbia_sf_sp <- serbia_sf
+}
+terra::plot(serbia_sf, add = TRUE, border = "black", col = adjustcolor("red", alpha.f = 0.5))
+```
+
+Here is also the comparison of the two rasters for the years 2018 and 2023:
+
+```{r}
+terra::plot(raster_srb_2018)
+terra::plot(raster_srb_2023)
+```
+
+### Extracting meaningful data from rasters
+
+In following we are going to take rasters for the two years (2018 and 2023) and try to extract meaningful data from them regarding tree cover change that happened in span of those 5 years. Besides that we also want to capture built areas of the country and changes in area covered by them in that time as well.
+
+First we are going to make data frame out of the color table of our raster to inspect with which colors we are working since the colors represent certain values in our raster - meaning certain color at one point stands for either built area, a tree or something else that the data set captures. Here we want to concentrate us on colors representing trees and built areas and values associated with them so that we can use these for further visualization purposes. To get the idea about the colors we are going to use `terra::coltab` function:
+
+```{r}
+raster_color_table <- do.call(
+    data.frame,
+    terra::coltab(raster_srb_2023)
+)
+head(raster_color_table)
+```
+
+Taking a look at the first few rows of the color palette we can see that each color value is separated in its RGB features and captured over columns `2,3,4` featuring also the `alpha` column which is not meaningful for us. First column named `value` represents the value through which we can access that color in the data set, which also means that through that value of the raster point we can access only points that are meaningful for us.
+
+Since we work with hexadecimal codes for colors in R we are going to convert these into their hexadecimal representatives using `ggtern::rgb2hex` function.
+
+```{r}
+hex_code <- ggtern::rgb2hex(
+    r = raster_color_table[,2],
+    g = raster_color_table[,3],
+    b = raster_color_table[,4]
+)
+
+```
+
+```{r}
+hex_code
+```
+
+Taking a look at hexadecimal codes we see that only first 12 entries hold actual colors. Everything else has code `#000000` which is black and represents a missing value. So the colors we get are:
+
+```{r}
+c("#000000", "#419bdf", "#397d49", "#000000", "#7a87c6", "#e49635", "#000000", "#c4281b", "#a59b8f", "#a8ebff" ,"#616161" ,"#e3e2c3")
+```
+
+Since we want to extract only trees and built areas which are shown to be green and red on [Living Atlas](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=16.23950%2C45.78166%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0), we want to consider only values with colors coded through `#397d49` and `#c4281b`. We are going to convert this hexadecimal value back to its RGB values using function `col2rgb`, so that we can find indexes of colors which we will be extracting, in our case green for trees and red for built areas:
+
+```{r}
+built_target_color <- "#c4281b"
+built_target_rgb <- col2rgb(built_target_color)
+
+tree_target_color <- "#397d49"
+tree_target_rgb <- col2rgb(tree_target_color)
+
+
+```
+
+We are now going to write a function which is going to help us find the color matches in the color table and extract the values associated with them through which we can later on access the raster point:
+
+```{r}
+compare_rgb <- function(r, g, b, target_rgb) {
+  return(r == target_rgb[1] & g == target_rgb[2] & b == target_rgb[3])
+}
+```
+
+We will now add two new columns to the `raster_color_table`: `match_built` and `match_tree`. For each row this function will assign `TRUE` if the color was successfully found and `FALSE` otherwise.
+
+```{r}
+raster_color_table$match_built <- with(raster_color_table, 
+                                       compare_rgb(red, green, blue, built_target_rgb))
+
+raster_color_table$match_tree <- with(raster_color_table, 
+                                      compare_rgb(red, green, blue, tree_target_rgb))
+```
+
+Now we can extract the two values and use them in further work for accessing tree and built points:
+
+```{r}
+built_target_index <- raster_color_table$value[raster_color_table$match_built]
+tree_target_index <- raster_color_table$value[raster_color_table$match_tree]
+```
+
+We will construct a list of two data frames, first for the year 2018 and the second one fro 2023. Using `exactextractr::exact_extract` function, we summarize the area covered with the trees and the area covered with cities or infrastructure (built area) for both years. Since `coverage_area` returns `m2` we are going to divide returned values through `1e6` to get `km2`. To extract tree cover points we are going to consider our previously found `tree_target_index` and to get information about built areas `built_target_index`
+
+```{r}
+rasters_srb_both_years <- list(raster_srb_2018, raster_srb_2023)
+
+dd_serbia <- list()
+for (i in seq_along(rasters_srb_both_years)) {
+  rasters <- rasters_srb_both_years[[i]]
+  lc <- exactextractr::exact_extract(
+    rasters,
+    serbia_sf,
+    function(df) {
+      df |>
+        dplyr::group_by(
+          shapeName
+        ) |>
+        dplyr::summarize(
+          tree_area_km2 = sum(
+            coverage_area[value == tree_target_index] / 1e6
+          ),
+          built_area_km2 = sum(
+            coverage_area[value == built_target_index] / 1e6
+          )
+        )
+    },
+    summarize_df = TRUE,
+    coverage_area = TRUE,
+    include_cols = "shapeName"
+  )
+  dd_serbia[[i]] <- lc
+}
+```
+
+Now we are going to bind the columns and get a full data set containing important information for both years:
+
+```{r}
+output <- do.call(cbind, dd_serbia)
+serbia_df <- as.data.frame(output)
+head(serbia_df)
+```
+
+Renaming columns for clarity:
+
+```{r}
+names(serbia_df) <- c("shapeName", "tree_area_km2_2018", "built_area_km2_2018", "shapeName2",
+                      "tree_area_km2_2023", "built_area_km2_2023")
+```
+
+Since we have `shapeName` column twice, we are going to extract only meaningful columns:
+
+```{r}
+serbia_df <- serbia_df |> dplyr::select(1:3, 5:6)
+```
+
+Last thing left to do is to add two new columns to our data set `tree_cover_change` and `bult_area_change` which capture the percentage change in **tree cover** and **built areas** in 2018 and 2023.
+
+```{r}
+serbia_df <- serbia_df |>
+  dplyr::mutate(
+    tree_cover_change = (
+      tree_area_km2_2023 - tree_area_km2_2018
+      ) / tree_area_km2_2018 * 100
+  )
+
+serbia_df <- serbia_df |>
+  dplyr::mutate(
+    bult_area_change = (
+      built_area_km2_2023 - built_area_km2_2018
+      ) / built_area_km2_2018 * 100
+  )
+```
+
+Lastly we have to bind columns of country's `shape file` and created data set, so that this can be used for plotting, because of `geometry column` in `serbia_sf` which holds information about polygon to which we are referring as administrative bound of level 1:
+
+```{r}
+serbia_changes <- cbind(serbia_sf, serbia_df)
+```
+
+### Visualization
+
+#### Map of Tree Cover Change in Serbia comparing years 2018 and 2023
+
+```{r}
+map <- ggplot() +
+  geom_sf(
+    data = serbia_changes,
+      aes(
+      fill = tree_cover_change),
+    color = "white",
+    size = .15
+  ) +
+  scale_fill_gradient2(
+    name = "Tree cover change in Serbia comparing 2018 and 2023",
+    midpoint = 0,
+    mid = "#f7de7c",
+    high = "#006f00",
+    low = "#9e319d"
+  ) +
+  guides(
+    fill = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(1.5, "mm"),
+      barwidth = unit(20, "mm"),
+      title.position = "top",
+      label.position = "bottom",
+      title.hjust = .5,
+      label.hjust = .5,
+      nrow = 1,
+      byrow = T
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.margin = unit(
+      c(
+        t = 0, b = 0,
+        r = 0, l = 0
+      ), "lines"
+    )
+  )
+map
+```
+
+#### Map of Built Area Change in Serbia comparing years 2018 and 2023
+
+```{r}
+built_map_change <- ggplot() +
+  geom_sf(
+    data = serbia_changes,
+    aes(
+      fill = bult_area_change
+    ),    color = "white",
+    size = .15
+  ) +
+  scale_fill_gradient2(
+    name = "Built AreaChange in Serbia comparing 2018 and 2023",
+    midpoint = 0,
+    mid = "yellow",
+    high = "red",
+    low = "green"
+  ) +
+  guides(
+    fill = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(1.5, "mm"),
+      barwidth = unit(20, "mm"),
+      title.position = "top",
+      label.position = "bottom",
+      title.hjust = .5,
+      label.hjust = .5,
+      nrow = 1,
+      byrow = T
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.margin = unit(
+      c(
+        t = 0, b = 0,
+        r = 0, l = 0
+      ), "lines"
+    )
+  )
+built_map_change
+```
+
+### Adding Built Areas To The map of Tree Cover Change
+
+The idea of this section is to plot points of country's built areas over the the previously constructed map for tree cover change. To do this we will use the data for year 2023. This section is meant for visualization purposes only and further inspections of the relation between tree cover change and gain in built areas are planed. It would be meaningful to perform statistic analysis on this variables and see how they correlate, but in this submission I will be concentrating on inspecting my possibilities with raster data and libraries used for working with them.
+
+#### Extracting Built Area Values
+
+Function `terra::ifel` lets us traverse the the `raster_srb_2023` based on certain condition and keeping values that we are looking for while maksing out everything else found as `NA's`. We will now make a use of our variable `built_target_index`, which represents raster points of built areas and to those points we will assign value 1 and mask everything else out.
+
+```{r}
+built_up_raster <- terra::ifel(
+    raster_srb_2023 == built_target_index,
+    1, 
+    NA 
+)
+```
+
+Taking a look at the current plot to see if the extraction was successful:
+
+```{r}
+terra::plot(built_up_raster)
+```
+
+Since `built_up_raster` also contains points for built areas in neighbouring countries included in initial `raster_srb_2023`, we will use `terra::crop` function to consider only the points obtained inside of Serbia's boundaries given by `shape file` named `serbia_sf`. Since `terra::crop` allows only cropping only rectangular areas we are left with few more points that should be masked out and not considered, so we are going to use function `terra::mask` to do so:
+
+```{r}
+cropped_raster <- crop(built_up_raster, vect(serbia_sf), snap = "in")
+masked_raster <- mask(cropped_raster, vect(serbia_sf))
+```
+
+Plotting `masked_raster` to see if it is sufficient:
+
+```{r}
+terra::plot(masked_raster)
+```
+
+We will now construct a data frame from our `masked_raster`, so that we can really plot these points over our tree cover change map. We are also going to use `aggregate` function with factor 5, so that memory consumption stays under control since we are working with huge rasters:
+
+```{r}
+built_up_df <- as.data.frame(aggregate(masked_raster, fact = 5), xy = TRUE, na.rm = TRUE)
+head(built_up_df)
+```
+
+The third column of our new data frame has always the value 1, which means that each coordinate in the raster represents a point that stands for a built area. We are going to convert this column to a factor, so that no problems with plotting occure:
+
+```{r}
+names(built_up_df)[3] <- "layer"
+built_up_df <- built_up_df %>%
+  mutate(layer = as.factor(layer))
+```
+
+#### Plotting the map of built areas
+
+Let us see how the map of built areas is looking like so far:
+
+```{r}
+built_map <- ggplot() +
+  geom_sf(data = serbia_sf, fill = NA, color = "black") +
+  geom_tile(data = built_up_df, aes(x = x, y = y, fill = layer), show.legend = FALSE) +
+  scale_fill_manual(values = built_target_color) +
+  theme_minimal() +
+  labs(title = "Built-Up Areas in Serbia (2023)")
+built_map
+```
+
+Since we got what we initially wanted, we can make a combined map of tree cover change overlayed by map of built areas:
+
+```{r}
+built_up_color <- "red"
+
+combined_map <- ggplot() +
+  geom_sf(data = serbia_changes, aes(fill = tree_cover_change), color = "white", size = 0.15) +
+  scale_fill_gradient2(
+    name = "Tree cover change in Serbia comparing 2018 and 2023",
+    midpoint = 0,
+    mid = "#f7de7c",
+    high = "#006f00",
+    low = "#9e319d",
+    guide = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(1.5, "mm"),
+      barwidth = unit(20, "mm"),
+      title.position = "top",
+      label.position = "bottom",
+      title.hjust = 0.5,
+      label.hjust = 0.5,
+      nrow = 1,
+      byrow = TRUE
+    )
+  ) +
+  # Overlay built-up areas with a fixed color
+  geom_tile(data = built_up_df, aes(x = x, y = y), fill = built_up_color, show.legend = FALSE) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.margin = unit(c(t = 0, b = 0, r = 0, l = 0), "lines"),
+    plot.title = element_text(hjust = 0.5)  # Center the title
+  ) +
+  labs(title = "Built-Up Areas in Serbia (2023)")
+
+combined_map
+```
+
+### Adding City To The Map
+
+To further enhance our map we are going to add city names to it to represent the biggest cities in the country (which are also the biggest built areas). To do so we are going to download data set [Geonames Cities with population \> 5000](https://documentation-resources.opendatasoft.com/explore/dataset/doc-geonames-cities-5000/information/) which contains all relevant information of cities including population of the city, country code and geographical location of the city which we need for plotting:
+
+```{r}
+filename <- "geonames-population.csv"
+```
+
+```{r eval=FALSE, include=TRUE}
+# download
+get_geonames_data <- function(){
+    table_link <- "https://documentation-resources.opendatasoft.com/api/explore/v2.1/catalog/datasets/doc-geonames-cities-5000/exports/csv?lang=en&timezone=Europe%2FBerlin&use_labels=true&delimiter=%3B"
+    res <- httr::GET(
+        table_link,
+        httr::write_disk(
+            filename
+        ),
+        httr::progress()
+    )
+}
+
+get_geonames_data()
+```
+
+Let's now read the data set we just downloaded:
+
+```{r}
+load_geonames_data <- function(){
+    places_df <- read.csv(
+        filename,
+        sep = ";"
+    )
+    return(places_df)
+}
+
+places_df <- load_geonames_data()
+
+head(places_df)
+
+```
+
+Columns we are interested in are 2 (`name`), 7 (`country_code`), 13 (`population`) and 18 (`location`). We are now going to store these in a separate data frame named `places_modified_df`. Since column `location` has values in form `latitude, longitude` we are going to split these values into two separate columns named `lat` and `long`:
+
+```{r}
+places_modified_df <- places_df[, c(2, 7, 13, 18)]
+names(places_modified_df) <- c(
+    "name", "country_code", "pop", "coords")
+
+places_modified_df[c("lat", "long")] <-
+    stringr::str_split_fixed(
+        places_modified_df$coords, ",", 2
+    )
+```
+
+Now we have to make a `shape file` which we are going to be able to plot. This is a for of data frame where we will extract only cities with `country_code` "RS" or "XK" to fit to our map and based on population variable we are going to take the 5 biggest cities. To make it a real `sf` object we also need coordinates which are constructed from our variables `long` and `lat`. Lastly we have to project this in coordinate system used for Europe which is: `"+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs"` :
+
+```{r}
+crs_lambert <- "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs"
+places_clean_sf <- places_modified_df |>
+    dplyr::filter(country_code == "RS" | country_code == "XK") |>
+    dplyr::slice_max(
+        pop,
+        n = 5
+    ) |>
+    dplyr::select(
+        -coords,
+        -country_code,
+        -pop
+    ) |>
+    sf::st_as_sf(
+        coords = c(
+            "long",
+            "lat"
+        ),
+        crs = 4326
+    ) |>
+    sf::st_transform(crs = crs_lambert)
+```
+
+Our complete map looks like this now:
+
+```{r}
+cities_added <- combined_map + 
+    geom_sf_text(
+    data = places_clean_sf,
+    aes(label = name),
+    size = 3,      
+    color = "black" 
+  )
+cities_added
+```
+
+### Austria
+
+I initially tried to perform these visualizations on rasters for Austria, but as I've mentioned at the beginning of the document I ran into some problems when merging 3 raster object that should represent entire country of Austria.
+
+First lets download all `GeoTIF` files for Austria for years 2018 and 2023:
+
+```{r}
+urls <- c(
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2023/33T_20230101-20240101.tif",
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2018/33T_20180101-20190101.tif",
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2023/33U_20230101-20240101.tif",
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2018/33U_20180101-20190101.tif",
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2023/32T_20230101-20240101.tif",
+  "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2018/32T_20180101-20190101.tif"
+)
+
+```
+
+```{r eval=FALSE, include=TRUE}
+for (url in urls) {
+  download.file(
+    url = url,
+    destfile = basename("AT/" + url),
+    mode = "wb",
+    method = "wget"
+  )
+}
+```
+
+#### Administrative Boundary Data
+
+The analysis was focused on Austria, for which administrative boundary data were obtained using the `rgeoboundaries` package. Specifically, second-level administrative boundaries (e.g., districts or municipalities) were retrieved:
+
+```{r}
+austria_sf <- rgeoboundaries::gb_adm1(
+  "AUT"
+)
+```
+
+Plot Austria:
+
+```{r}
+terra::plot(austria_sf)
+```
+
+#### Raster Data Processing
+
+I than rearranged files for the two years in two separate folders inside of `AT` directory, one folder `2018` and one `2023` so the access is easier. Raster files corresponding to the tree cover data for 2018 and 2023 were identified and loaded using the `terra` package. The files were selected based on the `.tif` file extension, ensuring that all relevant data were included:
+
+```{r}
+raster_files_2018 <- list.files(
+  path = "AT/2018",
+  pattern = "20190101.tif",
+  full.names = T
+)
+raster_files_2023 <- list.files(
+  path = "AT/2023",
+  pattern = "20240101.tif",
+  full.names = T
+)
+```
+
+My idea than was to merge all `GeoTIF` files for one year into one single raster, so that I get a full image at once, that can be accomplished by first converting all of the `GeoTIF` files into rasters, than using `sprc` to create collection of the rasters from the list of rasters which than can be combined to a single raster using `terra::mosaic` function:
+
+```{r}
+rasters_2018 <- lapply(raster_files_2018, terra::rast)
+```
+
+```{r}
+rasters_combined_2018 <- terra::mosaic(sprc(rasters_2018), fun = mean)
+
+```
+
+As for Serbia I tried the same approach with converting the `shape file` and the raster to the same CRS:
+
+```{r}
+crs_raster_aut <- terra::crs(rasters_combined_2018)
+crs_shapefile_aut <- sf::st_crs(austria_sf)
+
+
+crs_raster_aut
+crs_shapefile_aut
+
+if (crs_raster_aut != crs_shapefile_aut) {
+  austria_sf <- sf::st_transform(austria_sf, crs = crs_raster_aut)
+}
+```
+
+But than as soon as I plotted my raster only a small part of Austria was shown on the map, seemingly not at the right place at all:
+
+```{r warning=FALSE}
+terra::plot(rasters_combined_2018, main = "Raster and Shapefile Overlay Austria")
+
+if (inherits(austria_sf, "sf")) {
+  austria_sf_sp <- sf::as_Spatial(austria_sf)
+} else {
+  austria_sf_sp <- austria_sf
+}
+terra::plot(austria_sf, add = TRUE, border = "black", col = adjustcolor("red", alpha.f = 0.5))
+```
+
+I was wandering if something went wrong while merging rasters using `mosaic` function, so I tried to plot at least retrospective parts of Austrian maps on each of three rasters:
+
+```{r warning=FALSE}
+for (rast in rasters_2018) {
+  terra::plot(rast, main = "Tiles of austria raster and overlay of Austrian borders")
+
+if (inherits(austria_sf, "sf")) {
+  austria_sf_sp <- sf::as_Spatial(austria_sf)
+} else {
+  austria_sf_sp <- austria_sf
+}
+terra::plot(austria_sf, add = TRUE, border = "black", col = adjustcolor("red", alpha.f = 0.5))
+}
+```
+
+As it can be seen it appears that the rasters weren't combined successfully into one. North Sea isn't shown on the combined raster as well as Sicily which are seen on the separate tiles. My next thought was that the resulting raster maybe has to be in rectangular shape in order to be drawn properly, although I didn't see anything about this in the `terra` documentation. Now we will download one more `GeoTIF` file, so that we get a complete rectangle around Austria:
+
+```{r}
+missing_tile <- "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc2018/32U_20180101-20190101.tif"
+destfile_path <- paste0("AT/2018/MISSING_TILE/", basename(missing_tile))
+```
+
+Download the tile:
+
+```{r eval=FALSE, include=TRUE}
+download.file(
+  url = missing_tile,
+  destfile = destfile_path,
+  mode = "wb",
+  method = "wget"
+)
+```
+
+Now I will add this raster to `rasters_2018` and try merging them into one single raster again:
+
+```{r}
+missing_raster <- terra::rast(destfile_path)
+rasters_2018 <- append(rasters_2018, missing_raster)
+```
+
+Now lets mosaic all four rasters together:
+
+```{r}
+rasters_combined_2018 <- terra::mosaic(sprc(rasters_2018), fun = mean)
+```
+
+Lets plot it to see how it looks like now:
+
+```{r}
+terra::plot(rasters_combined_2018, main = "Rasters capturing Austria")
+
+```
+
+Again the same plot is shown as result of mosaicing the four tiles. Since I assumed all rasters have the same CRS, I decided to check this and allign all of the rasters to CRS of the first one:
+
+```{r}
+lapply(rasters_2018, terra::crs)
+```
+
+To make sure all rasters are in same CRS I manually assigned them coordinate reference system associated with Central Europe `EPSG:32632`:
+
+```{r}
+target_crs <- "EPSG:32632"
+
+rasters_2018 <- lapply(rasters_2018, function(r) {
+  if (is.null(terra::crs(r))) {
+    terra::crs(r) <- target_crs
+  }
+  r
+})
+```
+
+Than I also checked the resolutions of the rasters and resampled other rasters to resolution of the first:
+
+```{r}
+common_res <- terra::res(rasters_2018[[1]])
+rasters_2018 <- lapply(rasters_2018, function(r) {
+  if (!all(terra::res(r) == common_res)) {
+    r <- terra::resample(r, rasters_2018[[1]], method = "bilinear")
+  }
+  r
+})
+```
+
+I also checked extents of the rasters to make sure they are the same:
+
+```{r}
+common_extent <- terra::ext(rasters_2018[[1]])
+rasters_2018 <- lapply(rasters_2018, function(r) {
+  if (!identical(terra::ext(r), common_extent)) {
+    r <- terra::extend(r, common_extent)
+  }
+  r
+})
+```
+
+Again I tried to mosaic the rasters together, but this time aggregating them, so the function finishes faster:
+
+```{r}
+rasters_combined_2018 <- terra::mosaic(terra::sprc(lapply(rasters_2018, function (r) {
+  aggregate(r,
+            fact = 10)
+})), fun = mean)
+```
+
+The end result was again the same and not what I expected to see:
+
+```{r}
+terra::plot(rasters_combined_2018, main = "Merged Raster of Austria 2018")
+```
+
+#### Using Virtual Layer To Join Rasters
+
+We concluded that each of the tree rasters has diferent CRS and that `terra::mosaic` isn't able to combine all tree raster files to one single raster. I researched and found that the standard CRS is `EPSG:4326`. Since all tree rasters have different CRS, that is the reason why Austrian map can't be converted to one of them and than be used for all of them repeatedly. in following portion of code, I'll transform `austria_sf` to the CRS of the according raster file. Than I will be able to crop the right part of Austrian land from the raster using functions from `terra` package `crop` and `mask`. The raster is than projected to Coordinate reference system `EPSG:4326`. Than those new rasters will be saved into our directory `AUT/2018`.
+
+```{r}
+#remove missing raster
+rasters_2018[[4]] <- NULL
+```
+
+```{r}
+i <- 1
+crs <- "EPSG:4326"
+for(raster in rasters_2018){
+  country <- austria_sf %>%
+        sf::st_transform(crs = terra::crs(raster))
+  
+ land_cover <- crop(raster, vect(country), snap = "in") %>%
+    mask(vect(country)) %>%
+    aggregate(fact = 5, fun = "modal") %>%
+    terra::project(crs)
+
+    terra::writeRaster(
+        land_cover,
+        paste0("AT/2018/",
+            i,
+            "_austria_2018",
+            ".tif"
+        ),
+        overwrite = TRUE
+    )
+    i <- i + 1
+}
+```
+
+Having our new rasters, we can now load them into our session as a list and use them to make a virtual layer, which is basically the same as combining those rasters using `mosaic` function:
+
+```{r}
+r_list <- list.files(
+    path = "AT/2018",
+    pattern = "_austria_2018",
+    full.names = T
+)
+```
+
+```{r}
+land_cover_vrt_2018 <- terra::vrt(
+    r_list,
+    "austria_land_cover_vrt_2018.vrt",
+    overwrite = T
+)
+```
+
+Plotting the new virtual land cover raster, revealed, that we achieved the desired behaviour and now we have complete Austrian map with all points from the Land Cover data set. The only difference is that the color of the map are not the same as original ones after cropping and masking of only Austrian land was performed:
+
+```{r}
+terra::plot(land_cover_vrt_2018)
+```
+
+We will now do the same for rasters from 2023, first by rasterizing the `GeoTIF` files:
+
+```{r}
+rasters_2023 <- lapply(raster_files_2023, terra::rast)
+```
+
+Now let us project the the rasters to appropriate CRS and save them:
+
+```{r}
+i <- 1
+for(raster in rasters_2023){
+  country <- austria_sf %>%
+        sf::st_transform(crs = terra::crs(raster))
+  land_cover <- crop(raster, vect(country), snap = "in") %>%
+    mask(vect(country)) %>%
+    aggregate(fact = 5, fun = "modal") %>%
+    terra::project(crs)
+
+    terra::writeRaster(
+        land_cover,
+        paste0("AT/2023/",
+            i,
+            "_austria_2023",
+            ".tif"
+        ),
+        overwrite = TRUE
+    )
+    i <- i + 1
+}
+```
+
+Constructing virtual layer for year 2023:
+
+```{r}
+r_list_23 <- list.files(
+    path = "AT/2023",
+    pattern = "_austria_2023",
+    full.names = T
+)
+land_cover_vrt_2023 <- terra::vrt(
+    r_list_23,
+    "austria_land_cover_vrt_2023.vrt",
+    overwrite = T
+)
+```
+
+The plot:
+
+```{r}
+terra::plot(land_cover_vrt_2023)
+```
+
+#### Retrieving Original Colors
+
+I will once again inspect raster colors. Since we are using instances of Land Cover Data Set, the colors should be same, as they were for Serbia in previous part of this submission, but we will check one more time to be sure. For that it is enough to just take a look at one original raster:
+
+```{r}
+raster_color_table_aut <- do.call(
+    data.frame,
+    terra::coltab(rasters_2018[[1]])
+)
+
+head(raster_color_table_aut)
+
+```
+
+As we supposed the colors are the same. This time we will keep all colors for visualization purposes:
+
+```{r}
+cols <- hex_code[c(2:3, 5:6, 8:12)]
+
+from <- c(1:2, 4:5, 7:11)
+to <- t(col2rgb(cols))
+land_cover_vrt_2018 <- na.omit(land_cover_vrt_2018)
+```
+
+To change colors in our raster we will substitute them using `terra::subst` function:
+
+```{r}
+land_cover_at_2018 <- terra::subst(
+    land_cover_vrt_2018,
+    from = from,
+    to = to,
+    names = cols
+)
+```
+
+We will do the same for year 2023:
+
+```{r}
+land_cover_at_2023 <- terra::subst(
+    land_cover_vrt_2023,
+    from = from,
+    to = to,
+    names = cols
+)
+```
+
+Plotting my previously created rasters `land_cover_at_2018` and `land_cover_at_2023`, I realized that those are multi-band rasters, meaning red, green and blue are divided into separate bands, which would require using `terra::plotRGB` function and would make extracting single colors more difficult:
+
+```{r}
+terra::plot(land_cover_at_2018)
+terra::plot(land_cover_at_2023)
+```
+
+Plotting both next to each other using `terra::plotRGB`:
+
+```{r}
+terra::plotRGB(land_cover_at_2018, main = "Land Cover in Austria 2018")
+legend("topleft", legend = c("Water", "Trees", 
+                             "Flooded vegetation", "Crops", "Built Area",
+                             "Bare ground",
+                             "Snow/Ice",
+                             "Clouds", "Rangeland"), pch = 20, xpd=NA, cex = 0.6, bg="white", 
+       col=c("#419bdf", "#397d49", "#7a87c6", "#e49635", 
+             "#c4281b", "#a59b8f", "#a8ebff" ,"#616161" ,"#e3e2c3"))
+
+terra::plotRGB(land_cover_at_2023, main = "Land Cover in Austria 2023")
+legend("topleft", legend = c("Water", "Trees", 
+                             "Flooded vegetation", "Crops", "Built Area",
+                             "Bare ground",
+                             "Snow/Ice",
+                             "Clouds", "Rangeland"), pch = 20, xpd=NA, cex = 0.6, bg="white", 
+       col=c("#419bdf", "#397d49", "#7a87c6", "#e49635", 
+             "#c4281b", "#a59b8f", "#a8ebff" ,"#616161" ,"#e3e2c3"))
+
+```
+
+#### Extracting Data from Virtual Rasters
+
+In order to come up with the same maps as we did for Serbia, we will proceed with extracting values from the two virtual rasters, as they are the ones still containing values needed for point extraction:
+
+```{r}
+virtual_rasters <- list(land_cover_vrt_2018, land_cover_vrt_2023)
+
+dd_austria <- list()
+for (i in seq_along(virtual_rasters)) {
+  rasters <- virtual_rasters[[i]]
+  lc <- exactextractr::exact_extract(
+    rasters,
+    austria_sf %>% sf::st_transform(crs = terra::crs(rasters)),
+    function(df) {
+      df %>%
+        dplyr::group_by(
+          shapeName
+        ) %>%
+        dplyr::summarize(
+          tree_area_km2 = sum(
+            coverage_area[value == tree_target_index] / 1e6
+          ),
+          built_area_km2 = sum(
+            coverage_area[value == built_target_index] / 1e6
+          )
+        )
+    },
+    summarize_df = TRUE,
+    coverage_area = TRUE,
+    include_cols = "shapeName"
+  )
+  dd_austria[[i]] <- lc
+}
+```
+
+```{r}
+dd_austria[[1]]
+dd_austria[[2]]
+```
+
+Both resulting data sets include only values for Vienna, which is concerning since there should be data available for each region. I decided to overlay `land_cover_vrt_2018` with `austria_sf` to see if the match correctly, which is true:
+
+```{r warning=FALSE}
+terra::plot(land_cover_vrt_2018, main = "Raster and Shapefile Overlay Austria")
+terra::plot(austria_sf  %>% sf::st_transform(crs = terra::crs(rasters)),
+            add = TRUE, border = "black", col = adjustcolor("red", alpha.f = 0.3))
+```
+
+I than decided to make a simple text extraction to see if the data would still be missing:
+
+```{r}
+single_region <- austria_sf %>% 
+  filter(shapeName == "Burgenland") %>%
+  sf::st_transform(crs = terra::crs(land_cover_vrt_2018))  
+
+test_extract <- exactextractr::exact_extract(
+  land_cover_vrt_2018,
+  single_region,
+  function(df) {
+    print(head(df))  
+    df %>%
+      dplyr::summarize(
+        tree_area_km2 = sum(
+          coverage_area[value == tree_target_index] / 1e6,
+          na.rm = TRUE
+        ),
+        built_area_km2 = sum(
+          coverage_area[value == built_target_index] / 1e6,
+          na.rm = TRUE
+        )
+      )
+  },
+  summarize_df = TRUE,
+  coverage_area = TRUE,
+  include_cols = "shapeName"
+)
+test_extract
+```
+
+The inspection has shown, that I was forgetting to exclude missing values (`NAs`) while summarizing the values for each province:
+
+```{r}
+virtual_rasters <- list(land_cover_vrt_2018, land_cover_vrt_2023)
+
+dd_austria <- list()
+for (i in seq_along(virtual_rasters)) {
+  rasters <- virtual_rasters[[i]]
+  lc <- exactextractr::exact_extract(
+    rasters,
+    austria_sf %>% sf::st_transform(crs = terra::crs(rasters)),
+    function(df) {
+      df %>%
+        dplyr::group_by(
+          shapeName
+        ) %>%
+        dplyr::summarize(
+          tree_area_km2 = sum(
+            coverage_area[value == tree_target_index] / 1e6,
+             na.rm = TRUE
+
+          ),
+          built_area_km2 = sum(
+            coverage_area[value == built_target_index] / 1e6,
+            na.rm = TRUE
+          )
+        )
+    },
+    summarize_df = TRUE,
+    coverage_area = TRUE,
+    include_cols = "shapeName"
+  )
+  dd_austria[[i]] <- lc
+}
+
+```
+
+Now we can move forward and combine the data into one single data frame ready for plotting:
+
+```{r}
+output <- do.call(cbind, dd_austria)
+austria_df <- as.data.frame(output)
+head(austria_df)
+```
+
+```{r}
+names(austria_df) <- c("shapeName", "tree_area_km2_2018", "built_area_km2_2018", "shapeName2",
+                      "tree_area_km2_2023", "built_area_km2_2023")
+
+austria_df <- austria_df |> dplyr::select(1:3, 5:6)
+austria_df <- austria_df |>
+  dplyr::mutate(
+    tree_cover_change = (
+      tree_area_km2_2023 - tree_area_km2_2018
+      ) / tree_area_km2_2018 * 100
+  )
+
+austria_df <- austria_df |>
+  dplyr::mutate(
+    bult_area_change = (
+      built_area_km2_2023 - built_area_km2_2018
+      ) / built_area_km2_2018 * 100
+  )
+austria_changes <- cbind(austria_sf, austria_df)
+```
+
+#### Austria Tree Cover Change Map
+
+```{r}
+tree_cover_change_map_austria <- ggplot() +
+  geom_sf(
+    data = austria_changes,
+      aes(
+      fill = tree_cover_change),
+    color = "white",
+    size = .15
+  ) +
+  scale_fill_gradient2(
+    name = "Tree cover change in Austria comparing 2018 and 2023",
+    midpoint = 0,
+    mid = "#f7de7c",
+    high = "#006f00",
+    low = "#9e319d"
+  ) +
+  guides(
+    fill = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(1.5, "mm"),
+      barwidth = unit(20, "mm"),
+      title.position = "top",
+      label.position = "bottom",
+      title.hjust = .5,
+      label.hjust = .5,
+      nrow = 1,
+      byrow = T
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.margin = unit(
+      c(
+        t = 0, b = 0,
+        r = 0, l = 0
+      ), "lines"
+    )
+  )
+tree_cover_change_map_austria
+```
+
+#### Austria Built Area Cover Change Map
+
+```{r}
+built_map_change_austria <- ggplot() +
+  geom_sf(
+    data = austria_changes,
+    aes(
+      fill = bult_area_change
+    ),    color = "white",
+    size = .15
+  ) +
+  scale_fill_gradient2(
+    name = "Built Area Change in Austria comparing 2018 and 2023",
+    midpoint = 0,
+    mid = "yellow",
+    high = "red",
+    low = "green"
+  ) +
+  guides(
+    fill = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(1.5, "mm"),
+      barwidth = unit(20, "mm"),
+      title.position = "top",
+      label.position = "bottom",
+      title.hjust = .5,
+      label.hjust = .5,
+      nrow = 1,
+      byrow = T
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.margin = unit(
+      c(
+        t = 0, b = 0,
+        r = 0, l = 0
+      ), "lines"
+    )
+  )
+built_map_change_austria
+```
+
+### Conclusion
+
+This submission mainly aims to show possibilities in regard to working with `terra` and `sf` packages. I didn't expect it would essentially take such long time to come up with these visualizations, but my main problem was that the documentation regarding these packages is very much limited and only source of information I was able to find were the official documentation pages of the packages. As it seems not many people are working with them and getting along with `terra` is not the easiest task.
+
+I wanted to get to know these packages as I think they are such a powerful tools for visualizing and inspecting `GeoTIF` files, so I pointed my time and effort into this direction, not analysing the `cvs` files I mentioned in our previous conversations. I think these visualizations are meaningful and could be expanded in many more ways. Now that I know how to work `GeoTIF` data it would be also possible to make meaningful maps for whole continent of Europe exploring diverse data sets that can be found on [Global Forest Watch](https://www.globalforestwatch.org/). Combining `GeoTIF` files for the entire globe is still complicated, but as we mentioned in our previous conversation I will give my best to replicate the tree growth map for the whole globe.
+
+As I stated through out this submission, everything done here was for simple visualization purposes and to see if these things are possible at all. When I discovered [Land Cover Data Set](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=16.23950%2C45.78166%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0) I thought i would be perfect for something like this, since it contains information over multiple years and factors. In the further work I would also like to compare diverse factors such as human built areas and human built copes with our variable of interest (trees), to see if there is strong negative correlation between them. I also think it would be good to make an animation of tree cover change over the years provided by Land Cover Data Set which are 2018 to 2023. It would be certainly possible to do so for a single country, as in this case Austria or Serbia, but in the next few days I would try doing so for the whole continent of Europe to see if it's possible (around 40 tiles - here each tile was around `150Mb`).
+
+Since we also have `cvs` data sets with which we will be working on country base, I found a data set with monthly burned areas world wide: [Global Monthly Burned Area [2002 - 2023]](Global%20Monthly%20Burned%20Area%20%5B2002%20-%202023%5D) ([download link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/MCD64A1_burned_area_full_dataset_2002-2023.zip)) which is in the same form as our data sets, so it would be well suited for the task. Besides that Global Forest Watch features similar data over the years which would also make it possible to use it in our case. I still haven't downloaded the data and taken a proper look at it, but it can be downloaded from [here](https://glad.umd.edu/dataset/Fire_GFL/).
+
+On Global Forest Watch there is also *Data Set named Tree Cover Loss by Dominant Driver 2023* ([download here](https://data.globalforestwatch.org/documents/ff304784a9f04ac4a45a40f60bae5b26/about)). It seems that its resolution isn't the crispest, but I will take a proper look at it to see if it's usable in our case.
+
+I also found data about Global Mining, which contains polygons of activities related to mining in polygonal and `GeoTIF` format, which can be meaningful for our visualizations. It would also be possible to check the correlation between mining activities and deforestation. Data can be found [here](https://data.world/environmentdata/global-mining-locations-data).
