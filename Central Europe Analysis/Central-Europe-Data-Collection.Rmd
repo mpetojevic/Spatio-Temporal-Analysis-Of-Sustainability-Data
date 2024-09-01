@@ -1,0 +1,650 @@
+---
+title: "Spatio Temporal Analysis Of Sustainability Data"
+author: 'Marijana Petojevic '
+date: "29.07.2024"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+subtitle: Bachelor Thesis in Computational Statistics
+---
+
+#### Collecting Clustering Data
+
+We start again by loading needed libraries to work with spatial data in `GeoTIF` format. This submission will attempt to collect the data for the clustering analysis. Data is collected from various sources, such as [Land Cover Data Set](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=9.40600%2C45.75100%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0), [Global Mining Locations Dat](https://data.world/environmentdata/global-mining-locations-data)a and [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) (GWIS) from where Global Monthly Burned Area and Global Monthly Emissions data sets were obtained.
+
+```{r message=FALSE}
+libs <- c(
+  "tidyr", "dplyr", "terra",
+  "sf", "exactextractr",
+  "rgeoboundaries", "ggplot2",
+  "plotly", "grid", "ggtern", "gganimate",
+  "magick", "elevatr", "leaflet"
+)
+
+installed_libraries <- libs %in% rownames(
+  installed.packages()
+)
+
+if (any(installed_libraries == F)) {
+  install.packages(libs[!installed_libraries])
+}
+
+invisible(
+  lapply(
+    libs, library,
+    character.only = T
+  )
+)
+```
+
+### Land Cover Data Set
+
+To download the data from year 2018 to 2023 from the [Land Cover Data Set](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=9.40600%2C45.75100%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0), I wrote a function that constructs all needed links to obtain all the tiles that cover Central Europe over the period of 5 years.
+
+```{r eval=FALSE, include=TRUE}
+generate_links <- function(year) {
+  base_url <- "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc"
+  grid_codes <- c("32U", "33U", "34U", "32T", "33T", "34T")
+  
+  links <- paste0(
+    base_url, year, "/", 
+    grid_codes, "_", 
+    year, "0101-", year + 1, "0101.tif"
+  )
+  
+  return(links)
+}
+```
+
+```{r}
+years <- 2018:2023
+```
+
+```{r eval=FALSE, include=TRUE}
+download_links <- list()
+
+for (i in seq_along(years)) {
+  download_links[[i]] <- generate_links(years[i])
+}
+
+names(download_links) <- years
+
+```
+
+After the links were generated I proceeded to download the files to their designated directories named by years of interest.
+
+```{r eval=FALSE, include=TRUE}
+for (year in names(download_links)) {
+  dir.create(year, showWarnings = FALSE)
+  
+  for (l in download_links[[year]]) {
+    download.file(
+      url = l,
+      destfile = paste0(year, "/", basename(l)), 
+      mode = "wb",
+      method = "wget"
+    )
+  }
+}
+
+```
+
+Now we will load the spatial data for central European countries: *Austria, Germany, Czech Republic, Poland, Slovakia, Hungary, Switzerland* and *Slovenia.*
+
+```{r}
+central_europe <- rbind(gb_adm1("Austria"), gb_adm1("Germany"), 
+                        gb_adm1("Czech Republic"), gb_adm1("Poland"), 
+                        gb_adm1("Slovakia"), gb_adm1("Hungary"), 
+                        gb_adm1("Switzerland"), gb_adm1("Slovenia"))
+```
+
+We can plot combined spatial country data to see if we obtained correct map:
+
+```{r}
+terra::plot(central_europe)
+```
+
+Function `get_files` retrieves previously downloaded `GeoTIF` images in form of a list:
+
+```{r eval=FALSE, include=TRUE}
+get_files <- function(year) {
+  path <- file.path(as.character(year))
+  
+  pattern <- paste0(year + 1, "0101.tif")
+  
+  list.files(path = path, pattern = pattern, full.names = TRUE)
+}
+```
+
+```{r eval=FALSE, include=TRUE}
+files_list <- lapply(years, get_files)
+names(files_list) <- years
+```
+
+Once we have loaded needed files into our session, we can go on and rasterize them:
+
+```{r eval=FALSE, include=TRUE}
+rasters_list <- lapply(files_list, function(file_paths) {
+  lapply(file_paths, terra::rast)
+})
+```
+
+Following code chunk will traverse the list of raster files and crop them to the extents of our spatial file `central_europe`. Everything that is not withing the borders of Central Europe will be masked out and not taken into account. Those cropped and masked rasters will be saved as new `GeoTIF` images, so that we can use them further on to easily make virtual layers by combining them into a full picture of Central Europe.
+
+```{r eval=FALSE, include=TRUE}
+crs <- "EPSG:4326"
+
+for (index in seq_along(rasters_list)) {
+  year <- years[index]
+  rasters <- rasters_list[[index]]
+  
+  for (i in seq_along(rasters)) {
+    raster <- rasters[[i]]
+    
+    country <- central_europe %>%
+      sf::st_transform(crs = terra::crs(raster))
+    
+    land_cover <- raster %>%
+      crop(vect(country), snap = "in") %>%
+      mask(vect(country)) %>%
+      aggregate(fact = 5, fun = "modal") %>%
+      terra::project(crs)
+    
+    output_dir <- paste0(year)
+    dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+    
+    terra::writeRaster(
+      land_cover,
+      paste0(output_dir, "/", i, "_central_europe_", year, ".tif"),
+      overwrite = TRUE
+    )
+  }
+}
+
+```
+
+Following code chunk introduces function `create_vrt` which creates a virtual layer from files we created in previous code snippet. Files are combined for each year and a singular raster by year is the outcome:
+
+```{r}
+create_vrt <- function(year) {
+  r_list <- list.files(
+    path = paste0(year),
+    pattern = paste0("_central_europe_", year),
+    full.names = TRUE
+  )
+  
+  vrt_name <- paste0("central_europe_vrt", year, ".vrt")
+  terra::vrt(r_list, vrt_name, overwrite = TRUE)
+}
+```
+
+```{r}
+virtual_layers <- lapply(years, create_vrt)
+```
+
+Plotting the first virtual layer to see if the rasters were cropped correctly:
+
+```{r}
+terra::plot(virtual_layers[[1]])
+```
+
+```{r}
+names(virtual_layers) <- years
+```
+
+As I've conducted in my previous submission, Land Cover Dataset contains 10 variables that could be interesting for further analysis and finding patterns in correlation between variables. Those variables are: *water (`value 1`), Trees (`value 2`), Flooded vegetation (`value 4`), Crops (`value 5`), Built area (`value 7`), Bare Ground (`value 8`), Snow/Ice (`value 9)`, Clouds (`value 10)`* and *Rangeland (`value 11`).* Further description of the variables can be found [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d).
+
+In the following code chunk, using `exact_extract` function from package `exactextractr` we will calculate the total area in `km2` of each administrative region in Central Europe and what percentage of that region is covered variables of interest that we discussed before (water, trees, built areas,...). The fresulting data frames will be saved in a list where each list object (each data frame) represents calculations for that year:
+
+```{r}
+calculate_coverage_percentage <- function(raster, polygons) {
+  exactextractr::exact_extract(
+    raster,
+    polygons %>% sf::st_transform(crs = terra::crs(raster)),
+    function(df) {
+      df %>%
+        dplyr::group_by(shapeName) %>%
+        dplyr::summarize(
+          total_area_km2 = sum(coverage_area / 1e6, na.rm = TRUE),
+          
+          water_percentage = sum(coverage_area[value == 1] / 1e6, na.rm = TRUE) / 
+            total_area_km2 * 100,
+          
+          tree_percentage = sum(coverage_area[value == 2] / 1e6, na.rm = TRUE) / 
+            total_area_km2 * 100,
+          
+          flooded_vegetation_percentage = sum(coverage_area[value == 4] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          crops_percentage = sum(coverage_area[value == 5] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          built_area_percentage = sum(coverage_area[value == 7] / 1e6, na.rm = TRUE) / 
+            total_area_km2 * 100,
+          
+          bare_ground_percentage = sum(coverage_area[value == 8] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          snow_ice_percentage = sum(coverage_area[value == 9] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          clouds_percentage = sum(coverage_area[value == 10] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          rangeland_percentage = sum(coverage_area[value == 11] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100
+        )
+    },
+    summarize_df = TRUE,
+    coverage_area = TRUE,
+    include_cols = "shapeName"
+  )
+}
+```
+
+```{r}
+extracted_values <- list()
+
+for (i in seq_along(virtual_layers)) {
+  rasters <- virtual_layers[[i]]
+  
+  lc <- calculate_coverage_percentage(
+    raster = rasters,
+    polygons = central_europe
+  )
+  
+  extracted_values[[i]] <- lc
+}
+```
+
+```{r}
+names(extracted_values) <- years
+```
+
+We will now rename columns of each list object (data frame of corresponding years `2018-2023`), so that we can further join all the data sets together and create one singular data frame. To each column name we will add year for which the measurements were observed starting from column `water_percentage` (`shapeName` and `total_area_km2` are mutual for all 5 data frames):
+
+```{r}
+for (i in seq_along(extracted_values)) {
+  year <- names(extracted_values)[i]
+  df <- extracted_values[[i]]
+  
+  col_names <- colnames(df)
+  start_index <- which(col_names == "water_percentage")
+  
+  colnames(df)[start_index:length(col_names)] <- paste0(col_names[start_index:length(col_names)], "_", year)
+  
+  extracted_values[[i]] <- df
+}
+```
+
+Now we will merge all data frames into one single data frame:
+
+```{r}
+combined_df <- extracted_values[[1]]
+
+for (i in 2:length(extracted_values)) {
+  combined_df <- merge(
+    combined_df, 
+    extracted_values[[i]], 
+    by = c("shapeName", "total_area_km2"), 
+    all = TRUE
+  )
+}
+```
+
+```{r}
+head(combined_df)
+```
+
+```{r}
+str(combined_df)
+```
+
+We will join spatial data frame `central_europe` and our created `combined_df` to also keep the `geometry` column from the spatial data frame which is needed for plotting spatial data as it is in `MULTIPOLYGON` data format:
+
+```{r}
+central_europe_combined_df <- inner_join(central_europe, combined_df, by ="shapeName")
+```
+
+In following plot we will just plot tree percentage of each region in Central Europe for year 2023 to see how it looks like:
+
+```{r}
+map <- ggplot() +
+  geom_sf(
+    data = central_europe_combined_df,
+    aes(
+      fill = tree_percentage_2023,
+      text = paste0(
+        "Area: ", ifelse(is.na(shapeName), "NA", shapeName), "<br>",
+        "Total area: ", ifelse(is.na(total_area_km2), "NA", round(total_area_km2, 2)), " km2<br>",
+        "Tree Cover Percentage: ", ifelse(is.na(tree_percentage_2023), "NA", round(tree_percentage_2023, 2)), "%"
+      )
+    ),
+    color = "white",
+    size = .15
+  ) +
+  scale_fill_gradient2(
+    name = paste0("Tree percentage in Central Europe 2023"),
+    midpoint = 0,
+    mid = "#f7de7c",
+    high = "#006f00",
+    low = "#9e319d",
+    na.value = "grey50"
+    ) +
+  guides(
+    fill = guide_colorbar(
+      direction = "horizontal",
+      barheight = unit(1.5, "mm"),
+      barwidth = unit(20, "mm"),
+      title.position = "top",
+      label.position = "bottom",
+      title.hjust = .5,
+      label.hjust = .5,
+      nrow = 1,
+      byrow = T
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "top",
+    plot.margin = unit(
+      c(
+        t = 0, b = 0,
+        r = 0, l = 0
+      ), "lines"
+    )
+  )
+
+interactive_map <- ggplotly(map, tooltip = "text")
+
+interactive_map
+```
+
+### Mining Data
+
+Mining Locations were obtained from `data.world` and can be downloaded from [here](https://data.world/environmentdata/global-mining-locations-data). I decided to use `GeoTIF` image in 30 arcsecond format for the best resolution. Image can be downloaded from this [link](https://data.world/environmentdata/global-mining-locations-data/file/global_miningarea_v1_30arcsecond.tif).
+
+First we will rasterize the `GeoTIF` file and plot it in order to see what we are working with:
+
+```{r}
+mining_raster <- terra::rast("Global_mining/global_miningarea_v1_30arcsecond.tif")
+```
+
+```{r}
+terra::plot(mining_raster)
+```
+
+The new raster is again cropped to the extents of central Europe and saved as new `GeoTIF` file, so that this process doesn't have to be repeated, as it might take some time to complete:
+
+```{r}
+crs <- "EPSG:4326"
+
+ce <- central_europe %>%
+      sf::st_transform(crs = terra::crs(mining_raster))
+
+mining_raster <- mining_raster %>%
+      crop(vect(ce), snap = "in") %>%
+      mask(vect(ce)) %>%
+      terra::project(crs)
+```
+
+```{r}
+terra::writeRaster(
+      mining_raster,
+      "mining_central_europe.tif",
+      overwrite = TRUE
+    )
+```
+
+Loading our cropped mining data raster:
+
+```{r}
+mining_raster <- terra::rast("mining_central_europe.tif")
+```
+
+All points not masked with 0 are the ones where a mining location is to be found:
+
+```{r}
+terra::plot(mining_raster)
+```
+
+I converted my mining raster to data frame to make myself familiar with it and to reveal all the locations where mining activities take place:
+
+```{r}
+mining_df <- as.data.frame(mining_raster, xy = TRUE, na.rm = TRUE)
+```
+
+```{r}
+names(mining_df)
+```
+
+```{r}
+filtered_df <- mining_df %>%
+  filter(global_miningarea_v1_30arcsecond != 0)
+```
+
+```{r}
+head(filtered_df)
+```
+
+Now when we know how the data was observed, we can extract it. Since all coordinate points with value `>0` represent mining areas we can again extract the coverage of all mining areas in each administrative region in Central Europe. Besides that I also calculated the percentage of each region covered in mines:
+
+```{r}
+mine_cover_central_europe_df <- exactextractr::exact_extract(
+  mining_raster,
+  central_europe %>% sf::st_transform(crs = terra::crs(mining_raster)),
+  function(df) {
+    df %>%
+      dplyr::group_by(shapeName) %>%
+      dplyr::summarize(
+        total_area_km2 = sum(coverage_area / 1e6, na.rm = TRUE),
+        total_mine_cover_km2 = sum(coverage_area[value > 0] / 1e6, na.rm = TRUE),
+        mine_cover_of_state_percentage = if (any(!is.na(value) & value > 0)) {
+          sum(coverage_area[value > 0] / 1e6, na.rm = TRUE) / total_area_km2 * 100
+        } else {
+          NA_real_
+        }
+      )
+  },
+  summarize_df = TRUE,
+  coverage_area = TRUE,
+  include_cols = "shapeName"
+)
+
+
+```
+
+New data set can now be merged to the `central_europe_combined_df` we conducted previously:
+
+```{r}
+sustainabillyty_and_mines <- merge(
+    central_europe_combined_df, 
+    mine_cover_central_europe_df, 
+    by = c("shapeName"), 
+    all = TRUE
+  )
+```
+
+Since both data sets have variable `total_area_km2` those were renamed automatically when merging and both kept, we are going to remove one of them and rename the remaining one:
+
+```{r}
+sustainabillyty_and_mines <- sustainabillyty_and_mines %>% select(-c(total_area_km2.y))
+```
+
+```{r}
+sustainabillyty_and_mines <- sustainabillyty_and_mines %>%
+ dplyr::rename(
+    total_area_km2 = total_area_km2.x
+  )
+```
+
+### Burned Areas 2018 - 2023
+
+Data set *Global Monthly Burned Area [2002 - 2023]*can be downloaded from [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads), following this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/MCD64A1_burned_area_full_dataset_2002-2023.zip). It captures information about monthly burned areas in `ha` for each country and their administrative regions of first level within time span of 2002-2023.
+
+```{r}
+burned_areas <- read.csv("MCD64A1_burned_area_full_dataset_2002-2023.csv")
+```
+
+After loading the data set we will only keep observations for years after 2018 and than filter only those where the region is in `shapeName` of our current data set `sustainabillyty_and_mines`:
+
+```{r}
+burned_areas <- burned_areas %>%
+  filter(year >= 2018)
+```
+
+```{r}
+burned_areas <- burned_areas %>%
+  filter(region %in% sustainabillyty_and_mines$shapeName)
+```
+
+This data set differentiates between various types of areas that have been burned (`forest, savannas, shrubland_grasslands, croplands, other`), so we will summarize those by year and region to get total burned area for each region of interest in period 2018-2023:
+
+```{r}
+names(burned_areas)
+```
+
+```{r}
+burned_areas_summary <- burned_areas %>%
+  group_by(year, region) %>%
+  summarize(
+    total_burned_area = sum(forest, savannas, shrublands_grasslands, croplands, other, na.rm = TRUE)
+  )
+```
+
+Now we will convert this data frame to wide format, so it complies with our data set with which we want to merge it:
+
+```{r}
+burned_areas_wide <- burned_areas_summary %>%
+  pivot_wider(
+    names_from = year,               
+    values_from = total_burned_area, 
+    names_prefix = "burned_area_"    
+  )
+```
+
+We also need to rename the column `region` to `shapeName`:
+
+```{r}
+burned_areas_wide <- burned_areas_wide %>%
+ dplyr::rename(
+    shapeName = region
+  )
+```
+
+Join the two data sets:
+
+```{r}
+sustainabillyty_and_mines <- sustainabillyty_and_mines %>%
+  left_join(burned_areas_wide, by = "shapeName")
+```
+
+Replace `NAs` in burned area columns with zeros:
+
+```{r}
+sustainabillyty_and_mines <- sustainabillyty_and_mines %>%
+  mutate(
+    across(starts_with("burned_area_"), ~ replace_na(., 0)), 
+    mine_cover_of_state_percentage = replace_na(mine_cover_of_state_percentage, 0) 
+  )
+```
+
+### Monthly emissions
+
+*GFED Global Monthly Emissions [2002 - 2023]* data set can also be found on [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded following this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/emission_gfed_full_2002_2023.zip). It is in the same format as Burned Area data set containing observations for all regions of first administrative levels of each country. It observes monthly burning emissions by pollutant in tons from years 2002-2023.
+
+```{r}
+emissions_data <- read.csv("emission_gfed_full_2002_2023.csv")
+```
+
+We are going to extract only the years of interest which are 2018-2023 in our case and to keep only observations for first level administrative regions in Central europe:
+
+```{r}
+emissions_data <- emissions_data %>%
+  filter(year >= 2018 & region %in% sustainabillyty_and_mines$shapeName)
+```
+
+```{r}
+names(emissions_data)
+```
+
+Again we are going to summarize all emissions data by year and region:
+
+```{r}
+emissions_summary <- emissions_data %>%
+  group_by(year, region) %>%
+  summarize(
+    CO2_total = sum(CO2, na.rm = TRUE),
+    CO_total = sum(CO, na.rm = TRUE),
+    TPM_total = sum(TPM, na.rm = TRUE),
+    PM25_total = sum(PM25, na.rm = TRUE),
+    TPC_total = sum(TPC, na.rm = TRUE),
+    NMHC_total = sum(NMHC, na.rm = TRUE),
+    OC_total = sum(OC, na.rm = TRUE),
+    CH4_total = sum(CH4, na.rm = TRUE),
+    SO2_total = sum(SO2, na.rm = TRUE),
+    BC_total = sum(BC, na.rm = TRUE)
+  )
+```
+
+Converting the `emissions_summary` dataframe to wide format to comply to our current structure of the data set to which we want to merge it:
+
+```{r}
+emissions_wide <- emissions_summary %>%
+  pivot_wider(
+    names_from = year, 
+    values_from = c(CO2_total, CO_total, TPM_total, 
+                    PM25_total, TPC_total, NMHC_total, OC_total, 
+                    CH4_total, SO2_total, BC_total),  
+    names_glue = "{.value}_{year}" 
+  )
+
+```
+
+```{r}
+emissions_wide <- emissions_wide %>% rename(shapeName = region)
+```
+
+Merging the data sets:
+
+```{r}
+sustainabillyty_and_mines <- sustainabillyty_and_mines %>%
+  left_join(emissions_wide, by = "shapeName")
+```
+
+Replace any missing values across emission columns with zero:
+
+```{r}
+sustainabillyty_and_mines <- sustainabillyty_and_mines %>%
+  mutate(across(starts_with("CO2_total_") | 
+                 starts_with("CO_total_") |
+                 starts_with("TPM_total_") |
+                 starts_with("PM25_total_") |
+                 starts_with("TPC_total_") |
+                 starts_with("NMHC_total_") |
+                 starts_with("OC_total_") |
+                 starts_with("CH4_total_") |
+                 starts_with("SO2_total_") |
+                 starts_with("BC_total_"), 
+                ~ replace_na(., 0)))
+```
+
+### Export data
+
+Current data set `sustainabillyty_and_mines` contains column `geometry` which is in `MULTIPOLYGON` format and allows easy plotting of the regions, but this data type part of spatial object and can't be saved in a simple `.csv` file, so we have to convert our spatial data frame to simple data frame and deselect `geometry` column:
+
+```{r}
+export_sustainability_data <- as.data.frame(sustainabillyty_and_mines) %>%
+  select(-geometry)
+```
+
+The data is than exported as follows:
+
+```{r}
+write.csv(export_sustainability_data, "sustainability_data_central_europe.csv")
+```
