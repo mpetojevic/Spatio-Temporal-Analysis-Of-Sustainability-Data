@@ -1,0 +1,344 @@
+---
+title: "Spatio Temporal Analysis Of Sustainability Data"
+author: 'Marijana Petojevic '
+date: "29.07.2024"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+subtitle: Bachelor Thesis in Computational Statistics
+---
+
+```{r}
+austria_dom_driver <- read.csv("Annual tree cover loss by dominant driver in Austria/treecover_loss__ha.csv")
+```
+
+```{r}
+library(plotly)
+library(dplyr)
+summary_data <- austria_dom_driver %>%
+  group_by(umd_tree_cover_loss__year) %>%
+  summarise(total_loss = sum(umd_tree_cover_loss__ha))
+```
+
+
+```{r}
+plot_ly(summary_data, x = ~umd_tree_cover_loss__year, y = ~total_loss, type = 'bar',
+        text = ~paste("Year:", umd_tree_cover_loss__year, "<br>Loss (ha):", total_loss),
+        hoverinfo = 'text') %>%
+  layout(title = "Total Tree Cover Loss by Year",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Tree Cover Loss (ha)"))
+```
+
+```{r}
+# Summarize data by year and driver
+detailed_summary <- austria_dom_driver %>%
+  group_by(umd_tree_cover_loss__year, tsc_tree_cover_loss_drivers__driver) %>%
+  summarise(total_loss = sum(umd_tree_cover_loss__ha))
+
+# Create a vector of all unique years
+years <- unique(detailed_summary$umd_tree_cover_loss__year)
+
+# Interactive bar chart by driver and year with all years shown
+plot_ly(detailed_summary, x = ~umd_tree_cover_loss__year, y = ~total_loss, type = 'bar',
+        color = ~tsc_tree_cover_loss_drivers__driver,  # Color by driver
+        text = ~paste("Driver:", tsc_tree_cover_loss_drivers__driver, "<br>Year:", umd_tree_cover_loss__year, "<br>Loss (ha):", total_loss),
+        hoverinfo = 'text') %>%
+  layout(barmode = 'stack',  # Stacked bar chart
+         title = "Tree Cover Loss by Year and Driver",
+         xaxis = list(title = "Year", 
+                      tickvals = years,  # Ensure all years are shown
+                      tickmode = 'array',  # Use array mode for tickvals
+                      tickangle = -45),   # Tilt the year labels for better visibility
+         yaxis = list(title = "Tree Cover Loss (ha)"))
+
+
+```
+
+
+```{r}
+library(dplyr)
+library(readr)
+library(stringr)
+
+parent_dir <- "~/Uni/2024S/Bachelor/Spatio-Temporal-Analysis-Of-Sustainability-Data/Central Europe Analysis/Exploratory Analysis"
+
+# List all country directories
+country_dirs <- list.dirs(parent_dir, full.names = TRUE, recursive = FALSE)
+
+# Initialize an empty list to store data frames
+data_list <- list()
+
+# Loop through each country directory
+for (dir in country_dirs) {
+  # Extract the country name from the directory name
+  dir_name <- basename(dir)
+  prefix_length <- nchar("Annual tree cover loss by dominant driver in ")
+  country_name <- substr(dir_name, prefix_length + 1, nchar(dir_name))
+
+  # Construct the file path to the CSV file
+  csv_file <- file.path(dir, "treecover_loss__ha.csv")
+  
+  # Read the CSV file
+  df <- read_csv(csv_file)
+  
+  # Add the country column
+  df <- df %>% mutate(country = country_name)
+  
+  # Append the data frame to the list
+  data_list[[country_name]] <- df
+}
+
+# Combine all data frames into one
+combined_data <- bind_rows(data_list)
+
+# View the combined data
+print(combined_data)
+
+# Optionally, save the combined data to a new CSV file
+write_csv(combined_data, "combined_treecover_loss_data.csv")
+
+```
+
+```{r}
+library(dplyr)
+library(plotly)
+
+
+# Summarize data by year
+summary_data <- combined_data %>%
+  group_by(umd_tree_cover_loss__year) %>%
+  summarise(total_loss = sum(umd_tree_cover_loss__ha, na.rm = TRUE))
+
+# Plot total tree cover loss by year
+plot_ly(summary_data, x = ~umd_tree_cover_loss__year, y = ~total_loss, type = 'bar',
+        text = ~paste("Year:", umd_tree_cover_loss__year, "<br>Loss (ha):", total_loss),
+        hoverinfo = 'text') %>%
+  layout(title = "Total Tree Cover Loss by Year",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Tree Cover Loss (ha)"))
+
+```
+
+
+```{r}
+library(dplyr)
+library(plotly)
+library(htmlwidgets)  # Make sure to load the htmlwidgets package
+
+# Assuming 'combined_data' is the data frame with all countries' data combined
+
+# List unique countries
+countries <- unique(combined_data$country)
+
+# Initialize a list to store plots
+plot_list <- list()
+
+# Loop through each country and create a plot
+for (country in countries) {
+  # Filter data for the current country
+  country_data <- combined_data %>% filter(country == !!country)
+  
+  # Summarize data by year for the current country
+  summary_data <- country_data %>%
+    group_by(umd_tree_cover_loss__year) %>%
+    summarise(total_loss = sum(umd_tree_cover_loss__ha, na.rm = TRUE))
+  
+  # Create the plot
+  plot <- plot_ly(summary_data, x = ~umd_tree_cover_loss__year, y = ~total_loss, type = 'bar',
+                  text = ~paste("Year:", umd_tree_cover_loss__year, "<br>Loss (ha):", round(total_loss, 2),
+                  hoverinfo = 'text') %>%
+    layout(title = paste("Total Tree Cover Loss by Year in", country),
+           xaxis = list(title = "Year"),
+           yaxis = list(title = "Tree Cover Loss (ha)"))
+  
+  # Store the plot in the list
+  plot_list[[country]] <- plot
+}
+
+# Save plots as HTML files
+for (country in countries) {
+  html_file <- paste0("plot_total_loss_", gsub(" ", "_", country), ".html")
+  saveWidget(plot_list[[country]], file = html_file)
+}
+
+
+```
+
+```{r}
+library(dplyr)
+library(plotly)
+library(htmlwidgets)  # Make sure to load the htmlwidgets package
+
+# Assuming 'combined_data' is the data frame with all countries' data combined
+
+# List unique countries
+countries <- unique(combined_data$country)
+
+# Initialize a list to store plots
+plot_list <- list()
+
+# Loop through each country and create a plot
+for (country in countries) {
+  # Filter data for the current country
+  country_data <- combined_data %>% filter(country == !!country)
+  
+  # Summarize data by year and driver for the current country
+  detailed_summary <- country_data %>%
+    group_by(umd_tree_cover_loss__year, tsc_tree_cover_loss_drivers__driver) %>%
+    summarise(total_loss = sum(umd_tree_cover_loss__ha, na.rm = TRUE))
+  
+  # Create a vector of all unique years
+  years <- unique(detailed_summary$umd_tree_cover_loss__year)
+  
+  # Create the interactive bar chart
+  plot <- plot_ly(detailed_summary, x = ~umd_tree_cover_loss__year, y = ~total_loss, type = 'bar',
+                  color = ~tsc_tree_cover_loss_drivers__driver,  # Color by driver
+                  text = ~paste("Driver:", tsc_tree_cover_loss_drivers__driver, "<br>Year:", umd_tree_cover_loss__year, "<br>Loss (ha):", round(total_loss,2)),
+                  hoverinfo = 'text') %>%
+    layout(barmode = 'stack',  # Stacked bar chart
+           title = paste("Tree Cover Loss by Year and Driver in", country),
+           xaxis = list(title = "Year", 
+                        tickvals = years,  # Ensure all years are shown
+                        tickmode = 'array',  # Use array mode for tickvals
+                        tickangle = -45),   # Tilt the year labels for better visibility
+           yaxis = list(title = "Tree Cover Loss (ha)"))
+  
+  # Store the plot in the list
+  plot_list[[country]] <- plot
+}
+
+# Save plots as HTML files
+for (country in countries) {
+  html_file <- paste0("plot_loss_by_driver_", gsub(" ", "_", country), ".html")
+  saveWidget(plot_list[[country]], file = html_file)
+}
+
+```
+```{r}
+library(dplyr)
+library(readr)
+library(stringr)
+
+parent_dir <- "~/Uni/2024S/Bachelor/Spatio-Temporal-Analysis-Of-Sustainability-Data/Central Europe Analysis/Exploratory Analysis/components"
+
+country_dirs <- list.dirs(parent_dir, full.names = TRUE, recursive = FALSE)
+
+data_list <- list()
+
+for (dir in country_dirs) {
+  dir_name <- basename(dir)
+  prefix_length <- nchar("Components of net change in tree cover in ")
+  country_name <- substr(dir_name, prefix_length + 1, nchar(dir_name))
+
+  csv_file <- file.path(dir, "net_tree_cover_change_from_height__ha.csv")
+  
+  df <- read_csv(csv_file)
+  
+  df <- df %>% mutate(country = country_name)
+  
+  data_list[[country_name]] <- df
+}
+
+combined_data <- bind_rows(data_list)
+
+print(combined_data)
+
+write_csv(combined_data, "combined_net_cover_change_data.csv")
+
+```
+```{r}
+library(dplyr)
+library(readr)
+library(stringr)
+
+parent_dir <- "~/Uni/2024S/Bachelor/Spatio-Temporal-Analysis-Of-Sustainability-Data/Central Europe Analysis/Exploratory Analysis/fires"
+
+country_dirs <- list.dirs(parent_dir, full.names = TRUE, recursive = FALSE)
+
+data_list <- list()
+
+for (dir in country_dirs) {
+  dir_name <- basename(dir)
+  prefix_length <- nchar("Tree cover loss due to fires in ")
+  country_name <- substr(dir_name, prefix_length + 1, nchar(dir_name))
+
+  csv_file <- file.path(dir, "treecover_loss_from_fires_by_region__ha.csv")
+  
+  df <- read_csv(csv_file)
+  
+  df <- df %>% mutate(country = country_name)
+  
+  data_list[[country_name]] <- df
+}
+
+combined_data <- bind_rows(data_list)
+
+print(combined_data)
+
+write_csv(combined_data, "combined_fire_loss_data.csv")
+
+```
+
+```{r}
+data <- read.csv("../../Cluster-Analysis/sustainability_data_central_europe.csv")
+
+time_series_data <- data %>%
+  select(shapeName, starts_with("water_percentage"), starts_with("tree_percentage"),
+         starts_with("flooded_vegetation_percentage"), starts_with("crops_percentage"),
+         starts_with("built_area_percentage"), starts_with("bare_ground_percentage"),
+         starts_with("snow_ice_percentage"), starts_with("clouds_percentage"),
+         starts_with("rangeland_percentage"), starts_with("burned_area"),
+         starts_with("CO2_total"), starts_with("PM25_total"),
+         starts_with("TPC_total"), starts_with("NMHC_total"),
+         starts_with("OC_total"), starts_with("CH4_total"),
+         starts_with("SO2_total"), starts_with("BC_total")) %>%
+  pivot_longer(cols = -shapeName,
+               names_to = "parameter",
+               values_to = "value") %>%
+  mutate(year = as.integer(str_extract(parameter, "\\d{4}")),
+         parameter = str_remove(parameter, "_\\d{4}")) %>%
+  pivot_wider(names_from = parameter, values_from = value) %>%
+  group_by(shapeName, year) %>%
+  summarize(across(everything(), mean, na.rm = TRUE), .groups = 'drop')
+
+time_series_data <- data %>%
+  select(shapeName, shapeGroup, total_area_km2) %>%
+  left_join(time_series_data, by = "shapeName")
+
+time_series_data <- time_series_data %>% mutate(country = case_when(
+  shapeGroup == "AUT" ~ "Austria",
+  shapeGroup == "CZE" ~ "Czechia",
+  shapeGroup == "HUN" ~ "Hungary",
+  shapeGroup == "DEU" ~ "Germany",
+  shapeGroup == "POL" ~ "Poland",
+  shapeGroup == "SVK" ~ "Slovakia",
+  shapeGroup == "CHE" ~ "Switzerland",
+  shapeGroup == "SVN" ~ "Slovenia",
+  TRUE ~ NA_character_
+)) 
+names(time_series_data)
+```
+```{r}
+library(rgeoboundaries)
+central_europe <- rbind(gb_adm1("Austria"), gb_adm1("Germany"), 
+                        gb_adm1("Czech Republic"), gb_adm1("Poland"), 
+                        gb_adm1("Slovakia"), gb_adm1("Hungary"), 
+                        gb_adm1("Switzerland"), gb_adm1("Slovenia"))
+
+```
+```{r}
+time_series_data <- central_europe %>%
+  select(shapeName, geometry) %>%
+  left_join(time_series_data, by = "shapeName")
+```
+
+```{r}
+names(data)
+```
+
