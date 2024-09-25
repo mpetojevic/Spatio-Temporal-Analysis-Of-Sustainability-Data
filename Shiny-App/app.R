@@ -102,9 +102,172 @@ get_color_palette <- function(variable, domain) {
          "built_area_percentage_change" = colorBin(palette = c("#f7de7c", "#ff0000"), domain = domain, bins = 5),  # Shades of Red
          "crops_percentage_change" = colorBin(palette = c("#f7de7c", "#ff7f00"), domain = domain, bins = 5),  # Shades of Orange
          "rangeland_percentage_change" = colorBin(palette = c("#f7de7c", "#8B4513"), domain = domain, bins = 5),  # Shades of Brown
-         colorBin(palette = "YlOrRd", domain = domain, bins = 10)  # Default color palette
+         colorBin(palette = "YlOrRd", domain = domain, bins = 10)  
   )
 }
+
+
+stdbscan = function (x, 
+                     y, 
+                     time, 
+                     eps, 
+                     eps2, 
+                     minpts, 
+                     cldensity = TRUE) { 
+  
+  countmode = 1:length(x)
+  seeds = TRUE
+  
+  data_spatial<- as.matrix(dist(cbind(y, x)))
+  data_temporal<- as.matrix(dist(time))
+  n <- nrow(data_spatial)
+  
+  classn <- cv <- integer(n)
+  isseed <- logical(n)
+  cn <- integer(1)
+  
+  for (i in 1:n) {
+    if (i %in% countmode)
+      #cat("Processing point ", i, " of ", n, ".\n")
+      unclass <- (1:n)[cv < 1]
+    
+    if (cv[i] == 0) {
+      reachables <- intersect(unclass[data_spatial[i, unclass] <= eps],  unclass[data_temporal[i, unclass] <= eps2])
+      if (length(reachables) + classn[i] < minpts)
+        cv[i] <- (-1)                    
+      else {
+        cn <- cn + 1                   
+        cv[i] <- cn
+        isseed[i] <- TRUE
+        reachables <- setdiff(reachables, i)
+        unclass <- setdiff(unclass, i)       
+        classn[reachables] <- classn[reachables] + 1
+        while (length(reachables)) {
+          cv[reachables] <- cn           
+          ap <- reachables                           
+          reachables <- integer()
+          
+          for (i2 in seq(along = ap)) {
+            j <- ap[i2]
+            
+            jreachables <- intersect(unclass[data_spatial[j, unclass] <= eps], unclass[data_temporal[j, unclass] <= eps2])
+            
+            if (length(jreachables) + classn[j] >= minpts) {
+              isseed[j] <- TRUE
+              cv[jreachables[cv[jreachables] < 0]] <- cn
+              reachables <- union(reachables, jreachables[cv[jreachables] == 0])
+            }
+            classn[jreachables] <- classn[jreachables] + 1
+            unclass <- setdiff(unclass, j)
+          }
+        }
+      }
+    }
+    if (!length(unclass))
+      break
+    
+  }
+  
+  
+  if (any(cv == (-1))) {
+    cv[cv == (-1)] <- 0
+  }
+  out <- list(cluster = cv, eps = eps, minpts = minpts, density = classn)
+  rm(classn)
+  if (seeds && cn > 0) {
+    out$isseed <- isseed
+  }
+  class(out) <- "stdbscan"
+  return(out)
+}
+
+stdbscan_with_features <- function(x,
+                                   y,
+                                   time,
+                                   features,
+                                   eps,
+                                   eps2,
+                                   eps_features, 
+                                   minpts,
+                                   spatial_weight = 1, 
+                                   temporal_weight = 1, 
+                                   feature_weight = 1) {
+  
+  countmode <- 1:length(x)
+  seeds <- TRUE
+  
+  # Calculate normalized spatial, temporal, and feature distances
+  data_spatial <- as.matrix(dist(cbind(y, x)))  # Spatial distance based on longitude and latitude
+  data_temporal <- as.matrix(dist(time))        # Temporal distance based on the year
+  data_features <- as.matrix(dist(features))    # Feature distance (e.g., tree_percentage, water_percentage)
+  
+  n <- nrow(data_spatial)
+  classn <- cv <- integer(n)
+  isseed <- logical(n)
+  cn <- integer(1)
+  
+  for (i in 1:n) {
+    unclass <- (1:n)[cv < 1]
+    
+    if (cv[i] == 0) {
+      # Combine weighted spatial, temporal, and feature distances to find reachable points
+      reachables <- intersect(
+        intersect(unclass[data_spatial[i, unclass] <= eps], 
+                  unclass[data_temporal[i, unclass] <= eps2]),
+                  unclass[data_features[i, unclass] <= eps_features]
+      )
+      
+      if (length(reachables) + classn[i] < minpts)
+        cv[i] <- (-1)  # Mark as noise
+      else {
+        cn <- cn + 1
+        cv[i] <- cn
+        isseed[i] <- TRUE
+        reachables <- setdiff(reachables, i)
+        unclass <- setdiff(unclass, i)
+        classn[reachables] <- classn[reachables] + 1
+        
+        while (length(reachables)) {
+          cv[reachables] <- cn  # Assign cluster number
+          ap <- reachables
+          reachables <- integer()
+          
+          for (i2 in seq(along = ap)) {
+            j <- ap[i2]
+            
+            jreachables <- intersect(
+              intersect(unclass[data_spatial[j, unclass] <= eps], 
+                        unclass[data_temporal[j, unclass] <= eps2]),
+                        unclass[data_features[j, unclass] <= eps_features]
+            )
+            
+            if (length(jreachables) + classn[j] >= minpts) {
+              isseed[j] <- TRUE
+              cv[jreachables[cv[jreachables] < 0]] <- cn
+              reachables <- union(reachables, jreachables[cv[jreachables] == 0])
+            }
+            classn[jreachables] <- classn[jreachables] + 1
+            unclass <- setdiff(unclass, j)
+          }
+        }
+      }
+    }
+    if (!length(unclass)) break
+  }
+  
+  if (any(cv == (-1))) {
+    cv[cv == (-1)] <- 0
+  }
+  
+  out <- list(cluster = cv, eps = eps, eps2 = eps2, eps_features = eps_features, minpts = minpts, density = classn)
+  if (seeds && cn > 0) {
+    out$isseed <- isseed
+  }
+  class(out) <- "stdbscan"
+  return(out)
+}
+
+
 
 library(shiny)
 library(shinyjs)
@@ -122,6 +285,8 @@ library(dbscan)
 library(RColorBrewer)
 library(mclust)
 library(cluster)
+library(ggplot2)
+library(reshape2)
 
 # Function to format column names
 format_param_names <- function(names) {
@@ -243,15 +408,19 @@ ui <- fluidPage(
              div(style = "margin-bottom: 30px;", uiOutput("dynamicBubbleChart")),
              h3("Tree Loss Treemap"),
              div(style = "margin-bottom: 30px;", plotlyOutput("treeLossTreemap", height = "600px")),
+             h3("Feature Change Map"),
+             div(style = "margin-bottom: 30px;", uiOutput("featureChangeMap")),
+             
              
              h3("Clustering Plots"),
              div(style = "margin-bottom: 30px;", uiOutput("dynamicClusters")),
-             h3("ST-DBSCAN Clustering"),
-             p("Explore spatio-temporal clustering of environmental data using the ST-DBSCAN algorithm. Change Episolon and Minimum Points arguments to reveal different clustering."),
-             div(style = "margin-bottom: 30px;", uiOutput("dynamicSTDBSCAN")),
              
-             h3("K-means Clustering"),
-             div(style = "margin-bottom: 30px;", uiOutput("kMeansWithFeatures"))
+             h3("ST-DBSCAN Clustering"),
+             div(style = "margin-bottom: 30px;", uiOutput("STDBSCAN")),
+             h3("ST-DBSCAN Clustering Incorporating Features"),
+             div(style = "margin-bottom: 30px;", uiOutput("STDBSCANFEATURES")),
+             
+             
     )
   )
 )
@@ -291,7 +460,7 @@ server <- function(input, output, session) {
     )
   })
   
-
+  
   output$downloadAllData <- downloadHandler(
     filename = function() {
       paste("sustainability-datasets-", Sys.Date(), ".zip", sep = "")
@@ -345,7 +514,7 @@ server <- function(input, output, session) {
   
   output$bubbleChart <- renderPlotly({
     req(input$xVar, input$yVar)
-  
+    
     x_var_name <- names(param_mapping)[which(param_mapping == input$xVar)]
     y_var_name <- names(param_mapping)[which(param_mapping == input$yVar)]
     
@@ -394,7 +563,7 @@ server <- function(input, output, session) {
   })
   
   output$statesMap <- renderLeaflet({
-
+    
     colors <- brewer.pal(nrow(data_with_state_boarders), "Set3")
     palette <- colorFactor(palette = colors, domain = data_with_state_boarders$shapeName)
     
@@ -427,8 +596,8 @@ server <- function(input, output, session) {
     sidebarLayout(
       sidebarPanel(
         selectInput("year", "Choose year to plot clusters:", 
-                           choices = 2018:2023, 
-                           selected = 2023),
+                    choices = 2018:2023, 
+                    selected = 2023),
         selectInput("clusteringMethod", "Select Clustering Method:", 
                     choices = c("KMeans", "GMM", "ST-DBSCAN", "DTW"))
       ),
@@ -458,7 +627,7 @@ server <- function(input, output, session) {
   })
   
   
-
+  
   output$clusterPlot <- renderPlotly({
     # Get the selected year data
     selected_data <- selected_year_data()
@@ -533,72 +702,7 @@ server <- function(input, output, session) {
     }
   })
   
-  output$dynamicSTDBSCAN <- renderUI({
-    sidebarLayout(
-      sidebarPanel(
-        sliderInput("eps", "Epsilon (eps):", min = 0.5, max = 5, value = 2),
-        sliderInput("minPts", "Minimum Points (minPts):", min = 2, max = 10, value = 5)
-      ),
-      mainPanel(leafletOutput("STDBSCAN", height = "700px"))
-    )
-  })
-  
-  output$STDBSCAN <- renderLeaflet({
-    eps_val <- input$eps
-    minPts_val <- input$minPts
-    
-    tree_data <- data %>%
-      select(starts_with("tree_percentage")) %>%
-      na.omit()  
-    
-    tree_data_normalized <- scale(tree_data)
-    spatial_data <- data_with_state_boarders
-    
-    # Extract centroids from the multipolygon geometries
-    spatial_data$centroid <- st_centroid(spatial_data$geometry)
-    
-    coords <- st_coordinates(spatial_data$centroid)
-    spatio_temporal_data <- data.frame(coords, tree_data_normalized)
-    
-    dbscan_result <- dbscan(spatio_temporal_data, eps = eps_val, minPts = minPts_val)
-    
-    spatial_data$st_cluster <- dbscan_result$cluster
-    spatial_data_sf <- st_as_sf(spatial_data)
-    
-    n_clusters <- length(unique(spatial_data_sf$st_cluster))
-    colors <- brewer.pal(n_clusters, "Set3")
-    
-    palette <- colorFactor(palette = colors, domain = spatial_data_sf$st_cluster)
-    
-    leaflet(spatial_data_sf) %>%
-      addTiles() %>%
-      addPolygons(
-        fillColor = ~palette(st_cluster),
-        color = "black", 
-        weight = 1, 
-        fillOpacity = 0.7,
-        highlightOptions = highlightOptions(
-          weight = 2,
-          color = "#666",
-          fillOpacity = 0.7,
-          bringToFront = TRUE
-        ),
-        popup = ~paste0(
-          "<div style='font-size: 14px;'><b>Region:</b> ", shapeName, "<br>",
-          "<b>Cluster:</b> ", st_cluster, "</div>"
-        ),
-      ) %>%
-      addLegend(
-        pal = palette, 
-        values = ~st_cluster, 
-        title = "Clusters",
-        position = "bottomright"
-      ) %>%
-      setView(lng = mean(coords[, 1]), lat = mean(coords[, 2]), zoom = 6)
-    
-  })
-  
-
+ 
   output$dynamicSidebarLayout <- renderUI({
     req(clicked_state())  
     
@@ -807,14 +911,14 @@ server <- function(input, output, session) {
         )
       )
   })
-
+  
   output$reactiveHistogram <- renderUI({
     req(clicked_country())
     sidebarLayout(
       sidebarPanel(
         selectInput("year", "Choose a year:", 
-                     sort(unique(time_series_data$year)),
-                     selected = 2023),
+                    sort(unique(time_series_data$year)),
+                    selected = 2023),
         selectInput("variable", "Select Variable:", 
                     choices = param_mapping_with_tree_percentage,
                     selected = "tree_percentage")
@@ -825,7 +929,7 @@ server <- function(input, output, session) {
     )
   })
   
-    output$compareChange <- renderUI({
+  output$compareChange <- renderUI({
     req(clicked_country())
     years <- 2018:2023
     sidebarLayout(
@@ -843,77 +947,77 @@ server <- function(input, output, session) {
     )
   })
   
-    data_for_anual_state_change <- reactive({
-      req(clicked_country())
-      data_with_state_boarders %>%
-        filter(country == clicked_country())
-    })
+  data_for_anual_state_change <- reactive({
+    req(clicked_country())
+    data_with_state_boarders %>%
+      filter(country == clicked_country())
+  })
+  
+  # Reactive function for calculating annual percentage change
+  annual_change_df <- reactive({
+    country_df <- data_for_anual_state_change()
     
-    # Reactive function for calculating annual percentage change
-    annual_change_df <- reactive({
-      country_df <- data_for_anual_state_change()
-      
-      get_column_name <- sub("_[^_]*$", "", input$variableStateChange)
+    get_column_name <- sub("_[^_]*$", "", input$variableStateChange)
     
-      col_current <- paste0(get_column_name, "_", input$compare_year)
-      col_base <- paste0(get_column_name, "_2018")
-      col_change <- paste0(get_column_name, "_change_2018_", input$compare_year)
-      
-      if (!all(c(col_current, col_base) %in% colnames(country_df))) {
-        stop(paste("Selected variable", get_column_name, "is not available for the chosen years."))
-      }
-      
-      country_df %>%
-        mutate(
-          !!col_change := (get(col_current) - get(col_base)) / get(col_base) * 100
-        )
-    })
+    col_current <- paste0(get_column_name, "_", input$compare_year)
+    col_base <- paste0(get_column_name, "_2018")
+    col_change <- paste0(get_column_name, "_change_2018_", input$compare_year)
     
-    output$stateMapPlot <- renderLeaflet({
-      plot_data <- annual_change_df()
-      get_column_name <- sub("_[^_]*$", "", input$variableStateChange)
-      col_change <- paste0(get_column_name, "_change_2018_", input$compare_year)
-      
-      if (!col_change %in% colnames(plot_data)) {
-        stop(paste("Change data for", input$variableStateChange, "is not available."))
-      }
-      
-      # Ensure data is in sf format
-      plot_data_sf <- st_as_sf(plot_data)
-      
-      # Define the domain for the color scale based on the range of change values
-      domain <- range(plot_data_sf[[col_change]], na.rm = TRUE)
-      
-      color_bins <- get_color_palette(input$variableStateChange, domain)
-      
-      leaflet(data = plot_data_sf) %>%
-        addTiles() %>%
-        addPolygons(
-          fillColor = ~color_bins(get(col_change)),
-          fillOpacity = 0.7,
-          color = "black",
-          weight = 1,
-          highlightOptions = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.7, bringToFront = TRUE),
-          popup = ~paste0(
-            "<div style='font-size: 14px;'><b>State:</b> ", shapeName, "<br>",
-            "<b>", input$variableStateChange, " Change:</b> ", round(get(col_change), 2), "%</div>"
-          ),
-          layerId = ~shapeName
-        ) %>%
-        addLegend(
-          pal = color_bins,
-          values = ~get(col_change),
-          title = paste(input$variableStateChange, "Change from 2018 to", input$compare_year),
-          position = "bottomright",
-          labFormat = labelFormat(suffix = "%")  
-        ) %>%
-        setView(lng = 15, lat = 48, zoom = 4) %>%
-        addControl("<strong>Central Europe Areas Map</strong>", 
-                   position = "bottomleft", 
-                   className = "map-title")
-    })
+    if (!all(c(col_current, col_base) %in% colnames(country_df))) {
+      stop(paste("Selected variable", get_column_name, "is not available for the chosen years."))
+    }
     
+    country_df %>%
+      mutate(
+        !!col_change := (get(col_current) - get(col_base)) / get(col_base) * 100
+      )
+  })
+  
+  output$stateMapPlot <- renderLeaflet({
+    plot_data <- annual_change_df()
+    get_column_name <- sub("_[^_]*$", "", input$variableStateChange)
+    col_change <- paste0(get_column_name, "_change_2018_", input$compare_year)
     
+    if (!col_change %in% colnames(plot_data)) {
+      stop(paste("Change data for", input$variableStateChange, "is not available."))
+    }
+    
+    # Ensure data is in sf format
+    plot_data_sf <- st_as_sf(plot_data)
+    
+    # Define the domain for the color scale based on the range of change values
+    domain <- range(plot_data_sf[[col_change]], na.rm = TRUE)
+    
+    color_bins <- get_color_palette(input$variableStateChange, domain)
+    
+    leaflet(data = plot_data_sf) %>%
+      addTiles() %>%
+      addPolygons(
+        fillColor = ~color_bins(get(col_change)),
+        fillOpacity = 0.7,
+        color = "black",
+        weight = 1,
+        highlightOptions = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.7, bringToFront = TRUE),
+        popup = ~paste0(
+          "<div style='font-size: 14px;'><b>State:</b> ", shapeName, "<br>",
+          "<b>", input$variableStateChange, " Change:</b> ", round(get(col_change), 2), "%</div>"
+        ),
+        layerId = ~shapeName
+      ) %>%
+      addLegend(
+        pal = color_bins,
+        values = ~get(col_change),
+        title = paste(input$variableStateChange, "Change from 2018 to", input$compare_year),
+        position = "bottomright",
+        labFormat = labelFormat(suffix = "%")  
+      ) %>%
+      setView(lng = 15, lat = 48, zoom = 4) %>%
+      addControl("<strong>Central Europe Areas Map</strong>", 
+                 position = "bottomleft", 
+                 className = "map-title")
+  })
+  
+  
   
   filtered_year_data <- reactive({
     req(input$year, clicked_country())
@@ -922,7 +1026,7 @@ server <- function(input, output, session) {
   
   output$histogramPlot <- renderPlotly({
     country_data <- filtered_year_data()
-
+    
     if (nrow(country_data) == 0 || !input$variable %in% names(country_data)) {
       return(NULL)
     }
@@ -955,14 +1059,17 @@ server <- function(input, output, session) {
     state_data <- filter(time_series_data, shapeName == clicked_state())
     
     p <- plot_ly(state_data, x = ~year, y = ~tree_percentage, type = 'scatter', mode = 'lines+markers',
-                 name = 'Tree Percentage', text = paste('Year:', state_data$year, '<br>Tree Percentage:', round(state_data$tree_percentage, 2)),
-                 hoverinfo = 'text', line = list(color = 'blue'))
+                 name = 'Tree Percentage', 
+                 text = paste('Year:', state_data$year, '<br>Tree Percentage:', round(state_data$tree_percentage, 2)),
+                 hoverinfo = 'text') 
     
     if (length(input$parameters) > 0) {
       for (param in input$parameters) {
         original_param <- param_mapping[param]
+        
         p <- p %>% add_trace(y = state_data[[original_param]], mode = 'lines+markers',
-                             name = param, text = paste('Year:', state_data$year, '<br>', param, ':', round(state_data[[original_param]], 2)),
+                             name = param, 
+                             text = paste('Year:', state_data$year, '<br>', param, ':', round(state_data[[original_param]], 2)),
                              hoverinfo = 'text')
       }
     }
@@ -976,6 +1083,7 @@ server <- function(input, output, session) {
     p <- layout(p, title = paste("Time Series for", clicked_state()),
                 xaxis = list(title = 'Year'),
                 yaxis = list(title = 'Value'))
+    
     p
   })
   
@@ -1073,90 +1181,283 @@ server <- function(input, output, session) {
              yaxis = list(title = y_var_name))
   })
   
-  output$kMeansWithFeatures <- renderUI({
+  output$STDBSCAN <- renderUI({
     sidebarLayout(
       sidebarPanel(
-        checkboxGroupInput("selected_vars_Kmeans", 
-                           "Select Variables for Clustering:", 
-                           choices = param_mapping_with_tree_percentage,
-                           selected = "tree_percentage"),
-        actionButton("kMeansHelp", "Help")
+        sliderInput("eps", "Epsilon (eps) - Distance minimum for longitude and latitude:", min = 0.5, max = 5, value = 0.5),
+        sliderInput("eps2", "Epsilon2 (eps2) - Distance minimum for date:", min = 0.5, max = 5, value = 1),
+        sliderInput("minPts", "Minimum Points (minPts) to consider a cluster:", min = 2, max = 10, value = 4),
+        actionButton("stbsScanHelp", "Help")
       ),
       mainPanel(
-        h3("K-means Clustering of Spatio-Temporal Data"),
-        p("This plot shows the clustering results of selected variables over time, visualized on a map. Each region is assigned to one of the clusters based on the variables you choose."),
-        leafletOutput("kMeansClusterMap")
-      )
+        h3("ST-DBSCAN Clustering of Spatio-Temporal Data"),
+        p("Clustering plot using spatial and temoral dimension of the data set."),
+        plotlyOutput("stDbscanClusterPlot", height = "700px")
+        )
     )
   })
   
-  observeEvent(input$kMeansHelp, {
+  observeEvent(input$stbsScanHelp, {
     shinyalert(
-      title = "How to Use the K-means Clustering Map",
-      text = "This plot displays regions with their assigned clusters based on selected spatio-temporal variables. Select variables in the sidebar to run the clustering algorithm. To view information about a specific region, click on it.",
+      title = "How to Use the ST-DBSCAN Clustering Plot",
+      text = "This plot displays regions with their assigned clusters based on selected spatio-temporal variables. Select variables in the sidebar to run the clustering algorithm. To view information about a specific point, hover over it.",
       type = "info"
     )
   })
   
-  # Tried to use caching because this seems to be a slow process, but it didn't help much
-  kmeans_cache <- reactiveVal(NULL)
-  
-  observeEvent(input$selected_vars_Kmeans, {
-    kmeans_cache(NULL)  
-  })
-  
-  kmeans_result <- reactive({
-    selected_variables <- input$selected_vars_Kmeans
-    req(selected_variables)  
-    
-    if (is.null(kmeans_cache())) {
-      time_series_data_with_geometry <- data_with_state_boarders %>% 
-        select(shapeName, geometry) %>%
-        left_join(time_series_data, by = "shapeName")
-      
-      centroids <- st_centroid(time_series_data_with_geometry$geometry)
-      spatial_coords <- st_coordinates(centroids)
-      
-      variables_of_interest <- time_series_data %>%
-        select(all_of(selected_variables), year)
-      
-      scaled_variables <- scale(variables_of_interest[, -ncol(variables_of_interest)])
-      spatio_temporal_features <- cbind(spatial_coords, scaled_variables, year = variables_of_interest$year)
-      
-      result <- kmeans(spatio_temporal_features, centers = 8)
-      
-      kmeans_cache(result)
-    }
-    
-    kmeans_cache()
-  })
-  
-  output$kMeansClusterMap <- renderLeaflet({
-    kmeans <- kmeans_result()
-    
-    req(kmeans)
-    
+
+  output$stDbscanClusterPlot <- renderPlotly({
     time_series_data_with_geometry <- data_with_state_boarders %>% 
       select(shapeName, geometry) %>%
       left_join(time_series_data, by = "shapeName")
     
-    time_series_data_with_geometry$st_kmeans_cluster <- kmeans$cluster
+    centroids <- st_centroid(time_series_data_with_geometry$geometry)
     
-    pal <- colorFactor("Set1", domain = time_series_data_with_geometry$st_kmeans_cluster)
+    spatial_coords <- st_coordinates(centroids)
     
-    leaflet(time_series_data_with_geometry) %>%
+    req(input$eps, input$eps2, input$minPts)
+    
+    time_data <- time_series_data$year
+    
+    # Run ST-DBSCAN
+    result <- stdbscan(
+      x = spatial_coords[, 1],    # Longitude (x)
+      y = spatial_coords[, 2],    # Latitude (y)
+      time = time_data,           # Time variable (year in this case)
+      eps = input$eps,            # Spatial distance threshold
+      eps2 = input$eps2,          # Temporal distance threshold (adjust as needed)
+      minpts = input$minPts       # Minimum points for a cluster
+    )
+    
+    time_series_data_with_geometry$st_dbscan_cluster <- result$cluster
+    
+    time_series_data_with_geometry <- time_series_data_with_geometry %>%
+      mutate(st_dbscan_cluster = as.factor(st_dbscan_cluster))
+    
+    time_series_data_with_geometry$longitude <- spatial_coords[, 1]
+    time_series_data_with_geometry$latitude <- spatial_coords[, 2]
+    
+    gg <- ggplot(time_series_data_with_geometry, aes(x = longitude, y = latitude, color = st_dbscan_cluster)) +
+      geom_point(aes(
+        text = paste(
+          "Cluster:", st_dbscan_cluster,
+          "<br>State:", shapeName,
+          "<br>Longitude:", round(longitude, 2),
+          "<br>Latitude:", round(latitude, 2)
+        )
+      ), size = 3) +
+      labs(title = "ST-DBSCAN Clustering", x = "Longitude", y = "Latitude", color = "Cluster") +
+      theme_minimal()
+    
+    ggplotly(gg, tooltip = "text")
+  })
+  
+  
+  output$STDBSCANFEATURES <- renderUI({
+    sidebarLayout(
+      sidebarPanel(
+        sliderInput("eps", "Epsilon (eps) - Distance minimum for longitude and latitude:", min = 1, max = 5, value = 2),
+        sliderInput("eps2", "Epsilon2 (eps2) - Distance minimum for date:", min = 1, max = 5, value = 1),
+        sliderInput("epsFeat", "Epsilon Features (epsFeat) - Features Distance Threshold:", min = 0.01, max = 1, value = 0.5),  # Initial value
+        sliderInput("minPts", "Minimum Points (minPts) to consider a cluster:", min = 7, max = 15, value = 10),
+        checkboxGroupInput("selected_vars_stDbscan", 
+                           "Select Variables for Clustering:", 
+                           choices = param_mapping_with_tree_percentage,
+                           selected = c("tree_percentage"))
+      ),
+      mainPanel(
+        h3("ST-DBSCAN Clustering of Spatio-Temporal Data With Features"),
+        p("Clustering plot using custom algorithm which takes temporal and spatial dimension into account alongside the features of data set."),
+        plotlyOutput("stDbscanClusterFeatures", height = "700px"),
+        leafletOutput("stDbscanClusterLeaflet", height = "700px")
+        )
+    )
+  })
+  
+  stdbscan_result <- reactive({
+    time_series_data_with_geometry <- data_with_state_boarders %>% 
+      select(shapeName, geometry) %>%
+      left_join(time_series_data, by = "shapeName")
+    
+    centroids <- st_centroid(time_series_data_with_geometry$geometry)
+    spatial_coords <- st_coordinates(centroids)
+    
+    selected_variables <- input$selected_vars_stDbscan
+    print("HELLO")
+    print(selected_variables)
+    req(selected_variables, input$eps, input$eps2, input$epsFeat, input$minPts)
+    
+    temporal_data <- time_series_data %>%
+      select(all_of(selected_variables))
+    
+    print("Selected vars:")
+    print(head(temporal_data))
+    
+    scaled_temporal_data <- scale(temporal_data)
+    #print(head(scaled_temporal_data))
+    
+    time_data <- time_series_data$year
+    
+    result <- stdbscan_with_features(
+      x = spatial_coords[, 1],           # Longitude
+      y = spatial_coords[, 2],           # Latitude
+      time = time_data,                  # Time (year)
+      features = scaled_temporal_data,          # Only selected variables (features) for feature distance
+      eps = input$eps,                   # Spatial distance threshold
+      eps2 = input$eps2,                 # Temporal distance threshold
+      eps_features = input$epsFeat,      # Feature distance threshold (adjust as needed)
+      minpts = input$minPts              # Minimum points for a cluster
+    )
+    
+    time_series_data_with_geometry$st_dbscan_cluster <- result$cluster
+    time_series_data_with_geometry <- time_series_data_with_geometry %>%
+      mutate(st_dbscan_cluster = as.factor(st_dbscan_cluster))
+    
+    time_series_data_with_geometry$longitude <- spatial_coords[, 1]
+    time_series_data_with_geometry$latitude <- spatial_coords[, 2]
+    
+    return(time_series_data_with_geometry)
+  })
+  
+
+  
+  cluster_colors <- brewer.pal(n = 8, "Set2")
+  
+  get_color_palette_clusters <- function(clusters) {
+    unique_clusters <- sort(unique(clusters))
+    color_mapping <- setNames(cluster_colors[seq_along(unique_clusters)], unique_clusters)
+    return(color_mapping)
+  }
+  
+  
+  output$stDbscanClusterFeatures <- renderPlotly({
+    time_series_data_with_geometry <- stdbscan_result()
+  
+    cluster_color_mapping <- get_color_palette_clusters(time_series_data_with_geometry$st_dbscan_cluster)
+    
+    gg <- ggplot(time_series_data_with_geometry, aes(x = longitude, y = latitude, color = st_dbscan_cluster)) +
+      geom_point(aes(
+        text = paste(
+          "Cluster:", st_dbscan_cluster,
+          "<br>State:", shapeName,
+          "<br>Longitude:", round(longitude, 2),
+          "<br>Latitude:", round(latitude, 2)
+        )
+      ), size = 3) +
+      scale_color_manual(values = cluster_color_mapping) + 
+      labs(title = "ST-DBSCAN Clustering With Features", x = "Longitude", y = "Latitude", color = "Cluster") +
+      theme_minimal()
+    
+    ggplotly(gg, tooltip = "text")
+  })
+  
+  output$stDbscanClusterLeaflet <- renderLeaflet({
+    clustering_data <- stdbscan_result()
+    
+    cluster_color_mapping <- get_color_palette_clusters(clustering_data$st_dbscan_cluster)
+    pal <- colorFactor(palette = unname(cluster_color_mapping), domain = clustering_data$st_dbscan_cluster)
+    
+    leaflet(data = clustering_data) %>%
       addTiles() %>%
       addPolygons(
-        fillColor = ~pal(st_kmeans_cluster),
+        fillColor = ~pal(st_dbscan_cluster),  
+        fillOpacity = 0.7,
+        color = "black",                    
+        weight = 1,                          
+        highlightOptions = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.7, bringToFront = TRUE),
+        popup = ~paste0(
+          "<div style='font-size: 14px;'><b>State:</b> ", shapeName, "<br>",
+          "<b>Cluster:</b> ", st_dbscan_cluster, "<br>"
+        ), 
+        layerId = ~shapeName
+      ) %>%
+      addLegend(
+        pal = pal,
+        values = ~st_dbscan_cluster,    
+        title = "ST-DBSCAN Clusters",
+        position = "bottomright"
+      ) %>%
+      setView(lng = 15, lat = 48, zoom = 4) %>%  
+      addControl("<strong>Spatio-Temporal Clustering Map</strong>", 
+                 position = "bottomleft", 
+                 className = "map-title")
+  })
+  
+  output$featureChangeMap <-renderUI({
+    years <- 2018:2023
+    sidebarLayout(
+      sidebarPanel(
+        selectInput("compare_year", "Select Year to Compare with 2018:", choices = years[-1], selected = 2023),
+        selectInput("variableStateChange", "Select Change to Display:", choices = 
+                      c("tree_percentage_change", "built_area_percentage_change",
+                        "crops_percentage_change", "rangeland_percentage_change" ))
+      ),
+      mainPanel(
+        h4("Display Changes in Areas of Central Europe"),
+        h5("Click state of interest to display concrete statistics"),
+        leafletOutput("centralEuropChangePlot", height = "800px")  
+      )
+    )
+  })
+  
+
+    central_europe_anual_change <- reactive({
+    df <- data_with_state_boarders
+    
+    get_column_name <- sub("_[^_]*$", "", input$variableStateChange)
+    
+    col_current <- paste0(get_column_name, "_", input$compare_year)
+    col_base <- paste0(get_column_name, "_2018")
+    col_change <- paste0(get_column_name, "_change_2018_", input$compare_year)
+    
+    df %>%
+      mutate(
+        !!col_change := (get(col_current) - get(col_base)) / get(col_base) * 100
+      )
+  })
+  
+  output$centralEuropChangePlot <- renderLeaflet({
+    plot_data <- central_europe_anual_change()
+    get_column_name <- sub("_[^_]*$", "", input$variableStateChange)
+    col_change <- paste0(get_column_name, "_change_2018_", input$compare_year)
+    
+    if (!col_change %in% colnames(plot_data)) {
+      stop(paste("Change data for", input$variableStateChange, "is not available."))
+    }
+    
+    plot_data_sf <- st_as_sf(plot_data)
+    
+    domain <- range(plot_data_sf[[col_change]], na.rm = TRUE)
+    
+    color_bins <- get_color_palette(input$variableStateChange, domain)
+    
+    leaflet(data = plot_data_sf) %>%
+      addTiles() %>%
+      addPolygons(
+        fillColor = ~color_bins(get(col_change)),
         fillOpacity = 0.7,
         color = "black",
         weight = 1,
-        popup = ~paste("Cluster:", st_kmeans_cluster),
-        label = ~shapeName
+        highlightOptions = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.7, bringToFront = TRUE),
+        popup = ~paste0(
+          "<div style='font-size: 14px;'><b>State:</b> ", shapeName, "<br>",
+          "<b>", input$variableStateChange, " Change:</b> ", round(get(col_change), 2), "%</div>"
+        ),
+        layerId = ~shapeName
       ) %>%
-      setView(lng = 15, lat = 48, zoom = 4)
+      addLegend(
+        pal = color_bins,
+        values = ~get(col_change),
+        title = paste(input$variableStateChange, "Change from 2018 to", input$compare_year),
+        position = "bottomright",
+        labFormat = labelFormat(suffix = "%")  
+      ) %>%
+      setView(lng = 15, lat = 48, zoom = 5) %>%
+      addControl("<strong>Central Europe Areas Map</strong>", 
+                 position = "bottomleft", 
+                 className = "map-title")
   })
-  
+
 }
 
 shinyApp(ui, server)
