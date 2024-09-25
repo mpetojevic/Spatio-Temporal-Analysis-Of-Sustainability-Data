@@ -8,7 +8,7 @@ getwd()  # Check the current working directory
 #setwd("~/Uni/2024S/Bachelor/Spatio-Temporal-Analysis-Of-Sustainability-Data/Cluster-Analysis") 
 getwd()
 
-# Load your data
+# load data
 data <- read.csv("sustainability_data_central_europe.csv")
 
 combined_data <- read.csv("combined_treecover_loss_data.csv") %>%
@@ -21,21 +21,21 @@ fire_loss_data <- read.csv("combined_fire_loss_data.csv") %>%
   mutate(country = ifelse(country == "Czech Republic", "Czechia", country))
 
 
-# Prepare total loss data by year for each country
+# total loss data by year for each country
 total_loss_summary <- combined_data %>%
   group_by(country, umd_tree_cover_loss__year) %>%
   summarise(total_loss = sum(umd_tree_cover_loss__ha, na.rm = TRUE))
 
-# Prepare detailed loss data by year and driver for each country
+# detailed loss data by year and driver for each country
 detailed_loss_summary <- combined_data %>%
   group_by(country, umd_tree_cover_loss__year, tsc_tree_cover_loss_drivers__driver) %>%
   summarise(total_loss = sum(umd_tree_cover_loss__ha, na.rm = TRUE))
 
-# Create a vector of all unique years
+# vector of all unique years
 years <- unique(total_loss_summary$umd_tree_cover_loss__year)
 
 
-# Now pivot longer
+# pivot longer
 time_series_data <- data %>%
   select(shapeName, starts_with("water_percentage"), starts_with("tree_percentage"),
          starts_with("flooded_vegetation_percentage"), starts_with("crops_percentage"),
@@ -56,7 +56,6 @@ time_series_data <- data %>%
   summarize(across(everything(), mean, na.rm = TRUE), .groups = 'drop')
 
 
-# Assuming data is your original data frame and time_series_data is your time series data frame
 time_series_data <- data %>%
   select(shapeName, shapeGroup, total_area_km2) %>%
   left_join(time_series_data, by = "shapeName")
@@ -74,7 +73,7 @@ time_series_data <- time_series_data %>% mutate(country = case_when(
 )) 
 
 
-# Add state boarders for plotting
+# state boarders for plotting
 central_europe <- rbind(gb_adm1("Austria"), gb_adm1("Germany"), 
                         gb_adm1("Czech Republic"), gb_adm1("Poland"), 
                         gb_adm1("Slovakia"), gb_adm1("Hungary"), 
@@ -188,18 +187,14 @@ stdbscan_with_features <- function(x,
                                    eps,
                                    eps2,
                                    eps_features, 
-                                   minpts,
-                                   spatial_weight = 1, 
-                                   temporal_weight = 1, 
-                                   feature_weight = 1) {
+                                   minpts) {
   
   countmode <- 1:length(x)
   seeds <- TRUE
   
-  # Calculate normalized spatial, temporal, and feature distances
-  data_spatial <- as.matrix(dist(cbind(y, x)))  # Spatial distance based on longitude and latitude
-  data_temporal <- as.matrix(dist(time))        # Temporal distance based on the year
-  data_features <- as.matrix(dist(features))    # Feature distance (e.g., tree_percentage, water_percentage)
+  data_spatial <- as.matrix(dist(cbind(y, x)))  
+  data_temporal <- as.matrix(dist(time))        
+  data_features <- as.matrix(dist(features))    
   
   n <- nrow(data_spatial)
   classn <- cv <- integer(n)
@@ -314,7 +309,7 @@ ui <- fluidPage(
     column(12, 
            downloadButton("downloadAllData", "Download Data", class = "btn-primary"),
            actionButton("help_general", "Help"),
-           hr()  # Separator line
+           hr() 
     )
   ),
   
@@ -629,10 +624,8 @@ server <- function(input, output, session) {
   
   
   output$clusterPlot <- renderPlotly({
-    # Get the selected year data
     selected_data <- selected_year_data()
     
-    # Clustering based on the selected method
     method <- input$clusteringMethod
     if (method == "DTW") {
       # DTW Clustering
@@ -649,7 +642,6 @@ server <- function(input, output, session) {
       cluster_df <- selected_data %>%
         mutate(cluster = as.factor(cutree(hc_dtw, k = 4)))
       
-      # Plot DTW results
       plot_ly(cluster_df, 
               x = ~total_area_km2, 
               y = ~tree_percentage, 
@@ -784,7 +776,7 @@ server <- function(input, output, session) {
     country_total_loss <- filter(total_loss_summary, country == clicked_country())
     
     plot_ly(country_total_loss, x = ~umd_tree_cover_loss__year, y = ~total_loss, type = 'bar',
-            color = "pink",  # Change color to pink
+            color = "pink", 
             text = ~paste("Year:", umd_tree_cover_loss__year, "<br>Loss (ha):", round(total_loss, 2)),
             hoverinfo = 'text') %>%
       layout(title = paste("Total Tree Cover Loss by Year in", clicked_country()),
@@ -905,7 +897,7 @@ server <- function(input, output, session) {
         showlegend = TRUE,
         legend = list(
           title = "Metrics",
-          orientation = "v",  # Horizontal legend
+          orientation = "v", 
           xanchor = "center",
           yanchor = "bottom"
         )
@@ -953,7 +945,6 @@ server <- function(input, output, session) {
       filter(country == clicked_country())
   })
   
-  # Reactive function for calculating annual percentage change
   annual_change_df <- reactive({
     country_df <- data_for_anual_state_change()
     
@@ -982,10 +973,8 @@ server <- function(input, output, session) {
       stop(paste("Change data for", input$variableStateChange, "is not available."))
     }
     
-    # Ensure data is in sf format
     plot_data_sf <- st_as_sf(plot_data)
     
-    # Define the domain for the color scale based on the range of change values
     domain <- range(plot_data_sf[[col_change]], na.rm = TRUE)
     
     color_bins <- get_color_palette(input$variableStateChange, domain)
@@ -1219,14 +1208,14 @@ server <- function(input, output, session) {
     
     time_data <- time_series_data$year
     
-    # Run ST-DBSCAN
+    # run ST-DBSCAN
     result <- stdbscan(
-      x = spatial_coords[, 1],    # Longitude (x)
-      y = spatial_coords[, 2],    # Latitude (y)
-      time = time_data,           # Time variable (year in this case)
-      eps = input$eps,            # Spatial distance threshold
-      eps2 = input$eps2,          # Temporal distance threshold (adjust as needed)
-      minpts = input$minPts       # Minimum points for a cluster
+      x = spatial_coords[, 1],    # long (x)
+      y = spatial_coords[, 2],    # lat (y)
+      time = time_data,           # time
+      eps = input$eps,            # spat dist threshold
+      eps2 = input$eps2,          # temp dist threshold 
+      minpts = input$minPts       # min points for a cluster
     )
     
     time_series_data_with_geometry$st_dbscan_cluster <- result$cluster
@@ -1258,7 +1247,7 @@ server <- function(input, output, session) {
       sidebarPanel(
         sliderInput("eps", "Epsilon (eps) - Distance minimum for longitude and latitude:", min = 1, max = 5, value = 2),
         sliderInput("eps2", "Epsilon2 (eps2) - Distance minimum for date:", min = 1, max = 5, value = 1),
-        sliderInput("epsFeat", "Epsilon Features (epsFeat) - Features Distance Threshold:", min = 0.01, max = 1, value = 0.5),  # Initial value
+        sliderInput("epsFeat", "Epsilon Features (epsFeat) - Features Distance Threshold:", min = 0.01, max = 1, value = 0.5),  
         sliderInput("minPts", "Minimum Points (minPts) to consider a cluster:", min = 7, max = 15, value = 10),
         checkboxGroupInput("selected_vars_stDbscan", 
                            "Select Variables for Clustering:", 
@@ -1299,14 +1288,14 @@ server <- function(input, output, session) {
     time_data <- time_series_data$year
     
     result <- stdbscan_with_features(
-      x = spatial_coords[, 1],           # Longitude
-      y = spatial_coords[, 2],           # Latitude
-      time = time_data,                  # Time (year)
-      features = scaled_temporal_data,          # Only selected variables (features) for feature distance
-      eps = input$eps,                   # Spatial distance threshold
-      eps2 = input$eps2,                 # Temporal distance threshold
-      eps_features = input$epsFeat,      # Feature distance threshold (adjust as needed)
-      minpts = input$minPts              # Minimum points for a cluster
+      x = spatial_coords[, 1],           # long
+      y = spatial_coords[, 2],           # lat
+      time = time_data,                  # time (year)
+      features = scaled_temporal_data,   # only selected variables (features) for feature distance
+      eps = input$eps,                   # spatial distance threshold
+      eps2 = input$eps2,                 # temp distance threshold
+      eps_features = input$epsFeat,      # feat distance threshold (adjust as needed)
+      minpts = input$minPts              # min points for a cluster
     )
     
     time_series_data_with_geometry$st_dbscan_cluster <- result$cluster
