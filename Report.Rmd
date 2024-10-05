@@ -1,0 +1,935 @@
+---
+title: "Spatio Temporal Analysis Of Sustainability Data in Central Europe"
+author: 'Marijana Petojevic'
+date: "26.09.2024"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+subtitle: Bachelor Thesis in Computational Statistics
+---
+
+# Introduction
+
+Sustainability is a critical challenge facing today's society, particularly in Central Europe, where land use, environmental degradation, and industrial activities are significant factors. To address these issues, it is essential to monitor and analyze spatio-temporal data over time, uncovering patterns that can inform policy and decision-making. This report focuses on the spatio-temporal analysis of sustainability data, combining diverse datasets on land cover, mining locations, burned areas, and emissions across multiple years (2018-2023). These datasets, gathered from various sources such as the [Land Cover Data Set](https://livingatlas.arcgis.com/landcoverexplorer/), [Global Mining Locations Data](https://data.world/environmentdata/global-mining-locations-data), and the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/), offer a comprehensive view of environmental changes in the region. Additional datasets from [Global Forest Watch Dashboards](https://www.globalforestwatch.org/dashboards/global/), covering 2001--2023, are utilized to offer deeper insights into factors influencing tree cover changes in Central Europe.
+
+The project is structured into three main parts. The first part, **Data Collection and Preparation**, involves gathering and processing relevant spatial data. The second part, **Data Description**, provides a visual and descriptive analysis of the data, examining its spatio-temporal distribution and identifying the impact of various environmental factors on tree cover changes. Finally, the third part employs different **Clustering Methods** to group the spatio-temporal data into clusters, providing meaningful insights into sustainability trends across the region.
+
+This approach enables a nuanced understanding of how environmental changes are evolving over time and space, allowing for more effective and targeted actions to improve sustainability in Central Europe.
+
+# Data Collection and Preparation
+
+## Land Cover Data Set
+
+To perform a spatio-temporal analysis of tree cover change in a specific country from 2018 to 2023, we sourced geospatial data from the [*Living Atlas*](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=9.40600%2C45.75100%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0). This dataset provides annual land cover information, including tree cover, in a tile-based GeoTiff format. The *Living Atlas* offers users the ability to explore various land cover types through satellite imagery, covering categories such as *Trees, Water, Crops, Snow/Ice, Built Areas, Clouds, Flooded Vegetation, Bare Ground, and Rangeland* for the period between 2018 and 2023. More detailed information about the dataset is available [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d).
+
+Since the dataset is available in a tile-based GeoTIFF format, allowing for high-resolution geographic data to be analyzed over time, to efficiently collect the relevant data for the Central European region, I developed a custom function to automate the process of generating download links and retrieving the necessary files.
+
+## Downloading Land Cover Data
+
+The `generate_links` function creates download links for each year by constructing URLs that point to the tiles covering Central Europe. These tiles correspond to specific grid codes, ensuring full coverage of the region. The data spans from January 1st of one year to January 1st of the next, and this process was repeated for each year from 2018 to 2023.
+
+```{r eval=FALSE, include=TRUE}
+generate_links <- function(year) {
+  base_url <- "https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc"
+  grid_codes <- c("32U", "33U", "34U", "32T", "33T", "34T")
+  
+  links <- paste0(
+    base_url, year, "/", 
+    grid_codes, "_", 
+    year, "0101-", year + 1, "0101.tif"
+  )
+  
+  return(links)
+}
+```
+
+After constructing the links for the years 2018--2023, the files were downloaded and organized into directories for each year.
+
+```{r eval=FALSE, include=TRUE}
+for (year in names(download_links)) {
+  dir.create(year, showWarnings = FALSE)
+  
+  for (l in download_links[[year]]) {
+    download.file(
+      url = l,
+      destfile = paste0(year, "/", basename(l)), 
+      mode = "wb",
+      method = "wget"
+    )
+  }
+}
+```
+
+## Loading Spatial Data
+
+To focus the analysis on specific countries in Central Europe, I retrieved spatial boundary data for Austria, Germany, Czech Republic, Poland, Slovakia, Hungary, Switzerland, and Slovenia. These country boundaries were combined into a single spatial object to represent the geographic extent of the study. Each country is represented by its administrative regions of the first level.
+
+```{r eval=FALSE, include=TRUE}
+central_europe <- rbind(gb_adm1("Austria"), gb_adm1("Germany"), 
+                        gb_adm1("Czech Republic"), gb_adm1("Poland"), 
+                        gb_adm1("Slovakia"), gb_adm1("Hungary"), 
+                        gb_adm1("Switzerland"), gb_adm1("Slovenia"))
+
+```
+
+![Boundaries Of Central Europe Conducted Through `rgeoboundaries` package](Images/ce_boundaries.png)
+
+### Retrieving and Rasterizing GeoTIFF Files
+
+The `get_files` function retrieves the previously downloaded GeoTIFF images for each year, organizing them into lists that can be processed further.
+
+```{r eval=FALSE, include=TRUE}
+get_files <- function(year) {
+  path <- file.path(as.character(year))
+  pattern <- paste0(year + 1, "0101.tif")
+  list.files(path = path, pattern = pattern, full.names = TRUE)
+}
+
+files_list <- lapply(years, get_files)
+names(files_list) <- years
+```
+
+Once the files were loaded into R, they were rasterized using the `terra::rast` function, preparing them for further geo-spatial operations.
+
+```{r eval=FALSE, include=TRUE}
+rasters_list <- lapply(files_list, function(file_paths) {
+  lapply(file_paths, terra::rast)
+})
+```
+
+### Cropping and Masking Rasters
+
+To ensure that the analysis focuses solely on Central Europe, the raster data was cropped and masked based on the spatial boundaries of the selected countries. The `terra:aggregate` function reduces the resolution for computational efficiency, while the `terra::project` function ensures that the rasters have a consistent coordinate reference system (CRS). The resulting rasters were saved in `GeoTIFF` format, enabling the creation of virtual raster layers. These virtual layers are more computationally efficient and better suited for handling large-scale geospatial data during analysis.
+
+```{r eval=FALSE, include=TRUE}
+crs <- "EPSG:4326"
+
+for (index in seq_along(rasters_list)) {
+  year <- years[index]
+  rasters <- rasters_list[[index]]
+  
+  for (i in seq_along(rasters)) {
+    raster <- rasters[[i]]
+    
+    country <- central_europe %>%
+      sf::st_transform(crs = terra::crs(raster))
+    
+    land_cover <- raster %>%
+      crop(vect(country), snap = "in") %>%
+      mask(vect(country)) %>%
+      aggregate(fact = 5, fun = "modal") %>%
+      terra::project(crs)
+    
+    output_dir <- paste0(year)
+    dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+    
+    terra::writeRaster(
+      land_cover,
+      paste0(output_dir, "/", i, "_central_europe_", year, ".tif"),
+      overwrite = TRUE
+    )
+  }
+}
+```
+
+### Creating Virtual Raster Layers
+
+To facilitate visualization and analysis, I created virtual raster layers for each year by combining the individual tiles into a single continuous raster. The `create_vrt` function generates these virtual layers, allowing for efficient handling of large spatial data. The virtual rasters represent the land cover for each year across the entirety of Central Europe, providing a streamlined view of the data.
+
+```{r eval=FALSE, include=TRUE}
+create_vrt <- function(year) {
+  r_list <- list.files(
+    path = paste0(year),
+    pattern = paste0("_central_europe_", year),
+    full.names = TRUE
+  )
+  vrt_name <- paste0("central_europe_vrt", year, ".vrt")
+  terra::vrt(r_list, vrt_name, overwrite = TRUE)
+}
+
+virtual_layers <- lapply(years, create_vrt)
+
+```
+
+By plotting one of these virtual layers, I was able to confirm that the cropping and rasterization processes were executed correctly.
+
+![Virtual Layer of Central Europe for 2018](Images/vrt_layer_central_europe.png)
+
+### Extracting Meaningful Data From Rasters
+
+In the Land Cover dataset, each coordinate point is assigned one of 10 possible values, representing different land cover types. These values correspond to categories such as *water (`value 1`), Trees (`value 2`), Flooded vegetation (`value 4`), Crops (`value 5`), Built area (`value 7`), Bare Ground (`value 8`), Snow/Ice (`value 9)`, Clouds (`value 10)`* or *Rangeland (`value 11`).* The visual representation of these points is determined by their color on the raster, which indicates the type of land cover. Further details about these variables can be found [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d). For more information on how the values correspond to their original colors, refer to my submission on [GitHub](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Country-GeoTIFF-Analysis.html), where I first explored the Land Cover dataset.
+
+To analyze land cover data across different years, we used the `exact_extract` function from the `exactextractr` package. This function calculates the total area (in km²) of each administrative region in Central Europe and determines what percentage of that area is covered by specific land cover types, such as water, trees, and built areas. The function `calculate_coverage_percentage` was created to perform these calculations for each region and store the results in separate data frames for each year. Each data frame contains the total area of a region and the percentage of that region covered by various land cover types.
+
+```{r eval=FALSE, include=TRUE}
+calculate_coverage_percentage <- function(raster, polygons) {
+  exactextractr::exact_extract(
+    raster,
+    polygons %>% sf::st_transform(crs = terra::crs(raster)),
+    function(df) {
+      df %>%
+        dplyr::group_by(shapeName) %>%
+        dplyr::summarize(
+          total_area_km2 = sum(coverage_area / 1e6, na.rm = TRUE),
+          
+          water_percentage = sum(coverage_area[value == 1] / 1e6, na.rm = TRUE) / 
+            total_area_km2 * 100,
+          
+          tree_percentage = sum(coverage_area[value == 2] / 1e6, na.rm = TRUE) / 
+            total_area_km2 * 100,
+          
+          flooded_vegetation_percentage = sum(coverage_area[value == 4] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          crops_percentage = sum(coverage_area[value == 5] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          built_area_percentage = sum(coverage_area[value == 7] / 1e6, na.rm = TRUE) / 
+            total_area_km2 * 100,
+          
+          bare_ground_percentage = sum(coverage_area[value == 8] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          snow_ice_percentage = sum(coverage_area[value == 9] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          clouds_percentage = sum(coverage_area[value == 10] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100,
+          
+          rangeland_percentage = sum(coverage_area[value == 11] / 1e6, na.rm = TRUE) /
+            total_area_km2 * 100
+        )
+    },
+    summarize_df = TRUE,
+    coverage_area = TRUE,
+    include_cols = "shapeName"
+  )
+}
+```
+
+Applying function:
+
+```{r eval=FALSE, include=TRUE}
+extracted_values <- list()
+
+for (i in seq_along(virtual_layers)) {
+  rasters <- virtual_layers[[i]]
+  
+  lc <- calculate_coverage_percentage(
+    raster = rasters,
+    polygons = central_europe
+  )
+  
+  extracted_values[[i]] <- lc
+}
+names(extracted_values) <- years
+```
+
+### Renaming and Merging Data
+
+Once the data frames were generated for each year, the next step involved renaming the columns to include the corresponding year in the column name. This is done for all land cover percentage columns, ensuring that the data from different years can be easily distinguished and later merged into a single data frame.
+
+```{r eval=FALSE, include=TRUE}
+for (i in seq_along(extracted_values)) {
+  year <- names(extracted_values)[i]
+  df <- extracted_values[[i]]
+  
+  col_names <- colnames(df)
+  start_index <- which(col_names == "water_percentage")
+  
+  colnames(df)[start_index:length(col_names)] <- paste0(col_names[start_index:length(col_names)], 
+                                                        "_", year)
+  
+  extracted_values[[i]] <- df
+}
+
+```
+
+Finally, all the data frames for the different years were merged into one comprehensive data frame. This allows for a unified view of land cover changes across Central Europe from 2018 to 2023, where each region's total area and percentage coverage for different land cover types are tracked year by year:
+
+```{r eval=FALSE, include=TRUE}
+combined_df <- extracted_values[[1]]
+
+for (i in 2:length(extracted_values)) {
+  combined_df <- merge(
+    combined_df, 
+    extracted_values[[i]], 
+    by = c("shapeName", "total_area_km2"), 
+    all = TRUE
+  )
+}
+```
+
+## Mining Data
+
+The mining location data was obtained from [data.world](https://data.world), and I chose to use the GeoTIFF image in 30 arcsecond resolution for the best spatial accuracy. The data file can be downloaded from [this link](https://data.world/environmentdata/global-mining-locations-data). Since the GeoTIFF image contains global mining locations, the raster was cropped to focus on Central Europe for the purpose of this analysis. Upon examining the dataset, I found that raster points with values greater than zero represent mining areas. Using this information, we extracted the coverage of mining areas in each administrative region in Central Europe. Additionally, we calculated the percentage of each region's area covered by mines.
+
+The following code extracts mining area coverage for each region:
+
+```{r eval=FALSE, include=TRUE}
+mine_cover_central_europe_df <- exactextractr::exact_extract(
+  mining_raster,
+  central_europe %>% sf::st_transform(crs = terra::crs(mining_raster)),
+  function(df) {
+    df %>%
+      dplyr::group_by(shapeName) %>%
+      dplyr::summarize(
+        total_area_km2 = sum(coverage_area / 1e6, na.rm = TRUE),
+        total_mine_cover_km2 = sum(coverage_area[value > 0] / 1e6, na.rm = TRUE),
+        mine_cover_of_state_percentage = if (any(!is.na(value) & value > 0)) {
+          sum(coverage_area[value > 0] / 1e6, na.rm = TRUE) / total_area_km2 * 100
+        } else {
+          NA_real_
+        }
+      )
+  },
+  summarize_df = TRUE,
+  coverage_area = TRUE,
+  include_cols = "shapeName"
+)
+```
+
+After extracting the mining data, the new columns were integrated into our existing dataset. For more detailed information on this process and the mining locations dataset, refer to the [Central Europe Data Collection](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/Central-Europe-Data-Collection.html) document available on my GitHub page.
+
+## Burned Areas Data
+
+The *Global Monthly Burned Area [2002 - 2023]* dataset was sourced from the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded from this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/MCD64A1_burned_area_full_dataset_2002-2023.zip). It provides information on the monthly burned areas (in hectares) for each country and its administrative regions. The data spans from 2002 to 2023. For this project, I filtered the dataset to only include records from 2018 to 2023, as these were the years relevant to my analysis.
+
+![Columns in Burned Areas Data Set](Images/Screenshot%20from%202024-09-27%2011-40-27.png)
+
+The dataset differentiates between various land types affected by burning, such as *forests, savannas, shrubland/grasslands, croplands,* and *other* categories. I summarized this data by year and region to calculate the total burned area for each region between 2018 and 2023:
+
+```{r eval=FALSE, include=TRUE}
+burned_areas_summary <- burned_areas %>%
+  group_by(year, region) %>%
+  summarize(
+    total_burned_area = sum(forest, savannas, shrublands_grasslands, croplands, other, na.rm = TRUE)
+  )
+```
+
+To merge this dataset with our existing data, I cleaned the data and transformed it into a wide format. More information on this process can be found again in the [Central Europe Data Collection](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/Central-Europe-Data-Collection.html) document on my GitHub Page.
+
+## Central Europe Emissions Data
+
+*GFED Global Monthly Emissions [2002 - 2023]* data set can also be found on [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded following this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/emission_gfed_full_2002_2023.zip). provides monthly emissions data for various pollutants, such as CO2, CO, PM25, and CH4, across the globe. This dataset contains emission observations for first-level administrative regions of each country in the world.
+
+![Emission Data Set Columns](Images/Screenshot%20from%202024-09-27%2011-48-02.png)
+
+For this project, I extracted only the relevant data for Central European regions between 2018 and 2023. Since the original dataset contains monthly emissions, I summarized the data to obtain yearly emission totals for each region. Afterward, the data was transformed into a wide format to facilitate integration with the main dataset.Details on the entire process of handling and summarizing the emissions data can be found in the [Central Europe Data Collection](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/Central-Europe-Data-Collection.html) document on my GitHub Page.
+
+## Dataset Representation
+
+The structure of created data set looks as following:
+
+```{r include=FALSE}
+sustainability_data <- read.csv("~/Uni/2024S/Bachelor/Spatio-Temporal-Analysis-Of-Sustainability-Data/Central Europe Analysis/sustainability_data_central_europe.csv")
+```
+
+```{r echo=FALSE}
+str(sustainability_data)
+```
+
+## Global Forest Watch Dashboard Data
+
+For the Shiny App, which will be discussed in detail later, I also sourced data from the [Global Forest Dashboards](https://www.globalforestwatch.org/dashboards/global/). The dashboard provides downloadable data for each country for various purposes. The datasets I used include **Tree Cover Loss (2001-2020)**, **Annual Tree Cover Loss by Dominant Driver**, **Tree Cover Loss Due to Fires**, and **Components of Net Change in Tree Cover**. This data was downloaded separately for each country and then merged into separate data frames to cover the entire Central European region. These data frames can be accessed on my GitHub page [here](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/tree/main/Shiny-App) and code for on data collection process can be found in [this file](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/Data-Collection-Shiny-App/Data-Collection-For-Shiny-App.Rmd).
+
+# Sample Description
+
+The following section will outline the general structure of the datasets described in the previous section. We will examine the metrics that characterize this data and highlight trends in tree percentage changes, alongside changes in other features that may have influenced tree changes over the course of the last five years.
+
+To enable users to explore and interact with data conducted in previous step, a **Shiny App** was developed. The app allows users to visually inspect the dataset and interact with the various plots, enabling them to analyze tree cover trends, identify regional patterns, and examine the key drivers of forest change. With this interactive tool, users can better understand the spatial and temporal aspects of tree cover loss across Central Europe. App with used datasets needed for it to run can be downloaded from [this link](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/tree/main/Shiny-App).
+
+## General Data Description
+
+One of the key metrics derived from the data is the **cumulative tree cover loss**, which captures how much forest cover has been lost over time across the study regions. The following plot illustrates the cumulative tree cover loss (measured in hectares) between 2000 and 2023:
+
+![](Images/cumulativeloss.png)
+
+The plot highlights several periods of significant tree loss, notably around 2010 and 2020, with peaks reaching over 400,000 hectares of cumulative loss. Understanding these losses is essential for analyzing the effectiveness of forest management practices and identifying regions most vulnerable to deforestation.
+
+This cumulative tree loss can be further explored by examining the spatial distribution of changes in tree cover, as shown in subsequent sections. Moreover, the Shiny App allows users to break down these losses by region and correlate them with other factors like built area expansion, crop percentage changes, rangeland percentage and gas emissions.
+
+![Tree cover Loss in Central European Countries](Images/Screenshot%20from%202024-10-04%2015-07-23.png)
+
+Tree cover loss is significant across all Central European countries, but the factors driving these changes and the influence of other environmental variables remain unclear. To better understand what affects tree cover change in the Central European region, we will conduct a descriptive statistical analysis and aim to identify evident patterns in tree cover change.
+
+## Spatial Autocorrelation
+
+::: {#note style="background-color: #f0f7fb;      border-left: solid 4px #3498db;      line-height: 18px;      mc-auto-number-format: '{b}Note: {/b}';      overflow: hidden;      padding: 12px;"}
+**Note**: This section will include some code snippets, the whole code which you can run and play with it, can be found on my Github page in this document.
+:::
+
+Spatial autocorrelation describes the extent to which a variable is correlated with itself across space. A similar concept is found in [Tobler's First Law of Geography](https://www.jstor.org/stable/143141?origin=crossref), which states that *"everything is related to everything else, but near things are more related than distant things".*
+
+Positive spatial autocorrelation occurs when similar values are clustered together, while negative spatial autocorrelation occurs when dissimilar values are located near each other. Spatial autocorrelation can be assessed using indices that summarize the degree to which similar observations occur near each other within a dataset.
+
+![Configurations showing different types of spatial autocorrelation](Images/Screenshot%20from%202024-10-01%2020-17-57.png)
+
+As we are working with spatio-temporal data, we will further examine the spatial autocorrelation of our variable of interest, `tree_percentage`, for each of the five years from 2018 to 2023. To understand how the spatial dimension affects tree growth percentages, this section will employ **Moran's I** statistic to visualize tree percentage in relation to spatially lagged tree percentage. We will then conduct Moran's I tests and run **Monte Carlo simulations**, which will allow us to further cluster states within Central Europe based on their tree percentage and spatial location.
+
+### Global Moran's I
+
+The Global Moran's I can be calculated as follows:
+
+$$
+I = \frac{n \sum_{i} \sum_{j} w_{ij}(Y_i - \bar{Y})(Y_j - \bar{Y})}
+{\left( \sum_{i \neq j} w_{ij} \right) \sum_{i} (Y_i - \bar{Y})^2},
+$$
+
+In the formula $n$ denotes number of regions, $Y_i$ is the observed value of the variable of interest in region $i$ and $\bar{Y}$ is the mean of all values. Spatial weights that denote the spatial proximity between regions $i$ and $j$ are $w_{ij}$, with $w_{ii}=0$ and $i,j=1, ...,n$.
+
+The statistic tests how similar each region is to its neighbors. Under the null hypothesis of no spatial autocorrelation, observations $Y_i$ are independent and identically distributed. Moran's I follows a normal distribution with the mean and variance:
+
+$$
+E[I] = -\frac{1}{n-1}
+$$
+
+$$
+Var[I] = \frac{n^2 (n-1) S_1 - n (n-1) S_2 - 2S_0^2}{(n+1)(n-1)^2 S_0^2}
+$$
+
+where:
+
+-   $S_0 = \sum_{i \neq j} w_{ij}$,
+-   $S_1 = \frac{1}{2} \sum_{i \neq j} (w_{ij} + w_{ji})^2$,
+-   $S_2 = \sum_k \left( \sum_j w_{kj} + \sum_i w_{ik} \right)^2$.
+
+**Interpretation of Moran's I:**
+
+-   **Positive Spatial Autocorrelation (Clustering):** Values significantly above the expected $E[I]$ indicate positive spatial autocorrelation, where neighboring regions tend to have similar values.
+-   **Negative Spatial Autocorrelation (Dispersion):** Values significantly below $E[I]$ indicate negative spatial autocorrelation, where neighboring regions tend to have dissimilar values.
+-   **No Spatial Autocorrelation (Randomness):** Values around $E[I]$ indicate no spatial pattern.
+
+The test statistic for Moran's I is calculated as:
+
+$$
+z = \frac{I - E(I)}{\sqrt{Var(I)}}
+$$
+
+This z-score is compared to the standard normal distribution to assess significance.
+
+Alternatively, Monte Carlo randomization can generate a distribution of Moran's I under random patterns. This method provides a randomization distribution for Moran's I by reassigning the observed values among regions and calculating the Moran's I for each of the patterns.
+
+To test spatial autocorrelation, we follow these steps:
+
+1.  **Null Hypothesis** ($H_0$): $I = E[I]$ (no spatial autocorrelation).
+2.  **Alternative Hypothesis** ($H_1$): $I \neq E[I]$ (spatial autocorrelation).
+3.  **Test Statistic**: Calculate the z-score $z = \frac{I - E(I)}{\sqrt{Var(I)}}$.
+4.  **p-value**: Compare the z-score to the standard normal distribution or use Monte Carlo randomization to obtain a p-value.
+
+**Decision:**
+
+-   If $p$-value \< $\alpha$ (usually $\alpha = 0.05$), we reject the null hypothesis and conclude there is spatial autocorrelation.
+-   If $p$-value $\geq \alpha$, we fail to reject the null hypothesis and conclude there is no evidence of spatial autocorrelation.
+
+In order to gain first impressions about spatial autocorrelation of `tree_percentage` over the years, we will examine Moran's I scatterplots for each year. The `moran.plot()` function is used to create these scatterplots, which visualize the relationship between each observation and its spatially lagged values (i.e., the weighted average of its neighboring values). Using the `lag.listw()` function from the `spdep` package, we compute the spatial weights that help highlight this relationship and that are also used by other functions of `spdep` package which are going to be discussed in further work.
+
+```{r eval=FALSE, include=TRUE}
+nb <- poly2nb(data_with_state_boarders$geometry, queen = TRUE) # 'queen' contiguity for neighbors, meaning two neighbours share point of boarder
+lw <- nb2listw(nb, style = "W")  # Spatial weights matrix, row-standardized
+```
+
+The Moran's Plots are divided into four quadrants:
+
+-   **Quadrant I (top-right)**: High values surrounded by high values (High-High cluster).
+
+-   **Quadrant II (top-left)**: Low values surrounded by high values (Low-High outliers).
+
+-   **Quadrant III (bottom-left)**: Low values surrounded by low values (Low-Low cluster).
+
+-   **Quadrant IV (bottom-right)**: High values surrounded by low values (High-Low outliers).
+
+```{r eval=FALSE, include=TRUE}
+par(mfrow = c(3, 2))
+for (year_col in year_columns) {
+  tree_percentage <- data_with_state_boarders[[year_col]]
+  moran.plot(tree_percentage, lw, main = paste("Moran's I Scatterplot for", year_col))
+}
+```
+
+![Moran's I Scatter Plot showing observations against lagged values](Images/Rplot3.png)
+
+All scatterplots show a **positive linear relationship**, meaning that states with higher tree percentages tend to be surrounded by states with similarly high values (and vice versa for low values). This suggests **positive spatial autocorrelation**, indicating that similar values are clustered together rather than randomly distributed. **High-High clusters** (top-right quadrant) contain states with higher-than-average tree percentages surrounded by similarly high tree percentage neighbors. **Low-Low clusters** (bottom-left quadrant) contain states with lower-than-average tree percentages surrounded by neighbors with similarly low tree percentages. There are a few states that appear in the **top-left or bottom-right quadrants**, indicating potential **spatial outliers** (e.g., a high tree percentage surrounded by low tree percentage neighbors, or vice versa). These could be regions where local conditions differ significantly from their neighbors. Across all six plots, there is a consistent positive trend, meaning that the spatial autocorrelation of tree percentage remains stable over time. Each year shows similar clustering behavior, with relatively few outliers.
+
+As we have gained an idea about spatial autocorrelation of our variable of interest, we aim to test our hypothesis of positive spatial autocorrelation. At the first step we are going to employ function `moran.test()` of the [`spdep`](https://cran.r-project.org/web/packages/spdep/spdep.pdf) package to test spatial autocorrelation using Moran's I. this function allows us to set argument called `alternative` which denotes alternative hypothesis and can be set to `greater`, `less` or `two.sided`. For this test we are going to set `alternative="greater"` which specifies hypothesis as follows:
+
+-   $H_0: I\leq E[i]$ (negative spatial autocorrelation or no spatial autocorrelation)
+
+-   $H_1: I > E[i]$ (positive spatial autocorrelation)
+
+As `moran.test()` doesn't differentiate between temporal observations, we are going to create a function that will calculate Moran's I test for each year of retrospective `tree_percentage`.
+
+Calculating and storing results of Moran's I tests:
+
+```{r eval=FALSE, include=TRUE}
+calculate_morans_i_for_year <- function(data, value_column, lw) {
+    # Extract the tree percentage for the specific year
+    tree_percentage <- data[[value_column]]
+    morans_i <- moran.test(tree_percentage, lw)
+    return(morans_i)
+}
+
+year_columns <- c("tree_percentage_2018", "tree_percentage_2019", "tree_percentage_2020", 
+                  "tree_percentage_2021", "tree_percentage_2022", "tree_percentage_2023")
+for (year_col in year_columns) {
+  morans_i_results[[year_col]] <- calculate_morans_i_for_year(
+    data_with_state_boarders, 
+    value_column = year_col, 
+    lw = lw
+  )
+}
+```
+
+Next, we extract Moran's I statistic and corresponding p-values for each year to visualize the results and determine whether the null hypothesis ($H_0$) of no spatial autocorrelation can be rejected:
+
+![Moran's I Statistics and p-Values for tree percentage variables from 2018 to 2023](Images/Rplot01.png)
+
+As seen in the computed values, the p-values for each year are below the 0.05 significance level, allowing us to reject the null hypothesis. This indicates strong evidence of positive spatial autocorrelation in the `tree_percentage` variable across all years from 2018 to 2023.
+
+To further assess the significance, we can utilize a Monte Carlo approach. This method creates random patterns by reassigning the observed values among fixed areas and calculates Moran's I for each randomized pattern. The p-values are then computed as the proportion of simulated values that are as extreme or more extreme than the observed statistic, thereby providing a randomization-based significance test. The `spdep` package provides the `moran.mc()` function to perform this Monte Carlo simulation.
+
+We are going to calculate Moran's I statistic using `moran.mc()` employing 999 simulations and extract the results into a data frame in order to make plots that reveal a pattern and let us decide on our hypothesis:
+
+```{r eval=FALSE, include=TRUE}
+monte_carlo_results <- list()
+
+for (year_col in year_columns) {
+  tree_percentage <- data_with_state_boarders[[year_col]]
+  monte_carlo_results[[year_col]] <- moran.mc(tree_percentage, lw, nsim = 999)
+}
+```
+
+![Histograms of Moran's I values for each simulated pattern in Monte Carlo randomization approach.](Images/Rplot2.png)
+
+The red dashed line at the position of the observed Moran's I statistic for each year represents where the actual Moran's I falls in relation to the distribution of the simulated Moran's I values. Its purpose is to visually indicate how extreme the observed Moran's I is compared to the simulated values. If the observed Moran's I is located far in the tail of the simulated distribution, it suggests a significant result.
+
+In our case, this holds true, as the Monte Carlo randomization approach reinforces the findings of the previously employed Moran's I test. The calculated $p$-values for each year are below the significance level of $0.05$, which allows us to reject the null hypothesis. This provides strong evidence that positive spatial autocorrelation is present in the `tree_percentage` variable for each year.
+
+### Local Moran's I and Local Indicators of Spatial Association (LISA)
+
+The Global Moran's I provides a measure of spatial autocorrelation for the entire study area. However, it is often useful to analyze spatial clustering at a more localized level using [Local Indicators of Spatial Association (LISA)](https://onlinelibrary.wiley.com/doi/10.1111/j.1538-4632.1995.tb00338.x). LISA measures the degree of spatial clustering around each observation. One key property of LISA is that the sum of the local Moran's I values across all regions is proportional to the global Moran's I. This allows us to break the global statistic into local components, offering more granular insights.
+
+Widely used LISA metrics is the **local Moran's I**. For region $i$, the local Moran's I is defined as:
+
+$$
+I_i = \frac{n(Y_i - \bar{Y}) \sum_j (Y_j - \bar{Y}) w_{ij}}{\sum_j w_{ij} \sum_i (Y_i - \bar{Y})^2}
+$$
+
+where $n$ is the number of regions, $Y_i$ is the observed value for region $i$, $\bar{Y}$ is the mean value across all regions, $w_{ij}$ are the spatial weights between regions $i$ and $j$.
+
+The global Moran's I is proportional to the sum of the local Moran's I values:
+
+$$
+I = \frac{1}{\sum_i \sum_j w_{ij}} \sum_i I_i
+$$
+
+The local Moran's I indicates whether a region is part of a cluster of similar values or if it is an outlier. A high value of $I_i$ suggests that region $i$ is surrounded by regions with similar values (high-high or low-low clusters), while a low value indicates the region is an outlier (high-low or low-high).
+
+To interpret the local Moran's I for each region, we create a map of **p-values**. These p-values represent the probability of observing the given value under the null hypothesis of no spatial autocorrelation. The p-values are computed using a simulation-based approach, where the observed value in each region is fixed, and the remaining values are randomly shuffled. This process enables us to identify statistically significant clusters of spatial association or outliers.
+
+**"Greater Local Moran's I Test"**
+
+In this section, we calculate the **Local Moran's I** statistic for each year from 2018 to 2023 to explore the local spatial autocorrelation patterns for the variable `tree_percentage`. We use the `localmoran()` function from the `spdep` package, which computes Local Moran's I based on the spatial weights for the data. we again set alternative hypothesis to "greater", where:
+
+-   $H_0$: No or negative spatial autocorrelation.
+
+-   $H_1$: Positive autocorrelation.
+
+The function `localmoran()` returns:
+
+-   $I_i$: Local Moran's I statistic for each area.
+
+-   $E[I_i]$: Expected value under $H_0$.
+
+-   $Var[I_i]$: Variance of Local Moran's I.
+
+-   $Z[I_i]$: Z-Scores to access significance.
+
+-   $Pr(z > E[I_i])$: $p$-values indicating the significance of the spatial autocorrelation.
+
+```{r eval=FALSE, include=TRUE}
+calculate_local_morans_i_for_year <- function(data, value_column, lw) {
+  tree_percentage <- data[[value_column]]
+  
+  # Calculate Local Moran's I with alternative hypothesis "greater"
+  lmoran <- localmoran(tree_percentage, lw, alternative = "greater")
+  
+  return(data.frame(
+    Ii = lmoran[, "Ii"],                 # Local Moran's I statistic
+    EIi = lmoran[, "E.Ii"],              # Expected value of Ii
+    VarIi = lmoran[, "Var.Ii"],          # Variance of Ii
+    ZIi = lmoran[, "Z.Ii"],              # Z-scores
+    p_value = lmoran[, "Pr(z > E(Ii))"]  # P-values for greater test
+  ))
+}
+
+local_morans_i_results <- list()
+for (year_col in year_columns) {
+  local_morans_i_results[[year_col]] <- calculate_local_morans_i_for_year(
+    data_with_state_boarders, 
+    value_column = year_col, 
+    lw = lw
+  )
+}
+```
+
+We will visualize results for each year using [`tmap`](https://cran.r-project.org/web/packages/tmap/tmap.pdf) package. Areas in which p-value is less than the significance level $0.05$ (in other words areas where z-scores are higher than `qnorm(0.95) = 1.65`) are the ones for which we reject null hypothesis $H_0$ and conclude they present positive spatial autocorrelation. We will visualize Tree percentage of each year and Local Moran's I statistic as well, to also observe how these changed over time.
+
+![](Images/local_moran_2018.png)
+
+![](Images/local_moran_2019.png)
+
+![](Images/local_moran_2020.png)
+
+![](Images/local_moran_2021.png)
+
+![](Images/local_moran_2022.png)
+
+![](Images/local_moran_2023.png)
+
+As the `tree_percentage` variable shows, there are slight changes in the tree percentage for each area over the years. Similarly, the Moran's I statistics calculated for each year also reflect these differences. The plots for each year illustrate areas with positive spatial autocorrelation, with some neighboring states joining a cluster of positive spatial autocorrelation one year and then no longer being part of that group the next year.
+
+In Hungary, states with positive spatial autocorrelation consistently show very low tree percentages (between 2% and 10%). This makes sense, as this region is largely covered by fertile arable land (as indicated by the crops in our dataset). The significance value is below $0.05$ for southern Austrian states and the entirety of Slovenia, where tree percentages remain high compared to neighboring areas. The Slovenian states of Zahodna and Vzhodna, with tree percentages rising between 55% and 65%, contrast with Austrian states, where tree percentages are between 40% and 55%. A few Slovakian states, such as Zilina and Banska Bystrica, exhibit similar patterns to Austria and Slovenia, with high tree coverage (\~55%) throughout the observed years. The observed positive spatial autocorrelation in these groups makes sence, as these regions in Austria, Slovenia, and Slovakia are mountainous and naturally have higher tree percentages.
+
+In contrast, the northeastern territories of Germany show behavior similar to Hungary, with lower tree percentages compared to their neighboring states and regions geographically close to them. Those states are cities with higher built area density where it's expected to see lower tree percentage. Other states, however, do not exhibit a clear pattern, likely because their tree percentages are influenced by various factors beyond just geographical ones.
+
+**Two sided Local Moran's Test**
+
+Previous Local Moran's I statistic was calculated using hypothesis alternative "greater", but if we set the hypothesis alternative to `two.sided` this might reveal new patterns in the data, as $H_0$ would be: no spatial autocorrelation vs. $H_1$: positive or negative spatial autocorrelation. In the two-sided test, z-score values lower than $-1.96$ indicate negative spatial autocorrelation and those greater than $1.96$ positive one. We are going to conduct this test in order to break down the $H_0$ hypothesis from the previous section with "greater" hypothesis alternative (which was no or negative spatial autocorrelation) to see if any states for any of the captured years show negative spatial auto correlation.
+
+```{r eval=FALSE, include=TRUE}
+calculate_local_morans_i_for_year_two_sided <- function(data,
+                                                        value_column, 
+                                                        lw) {
+
+    tree_percentage <- data[[value_column]]
+  
+  # Calculate Local Moran's I two sided test
+  lmoran <- localmoran(tree_percentage, lw, alternative = "two.sided")
+  
+  return(data.frame(
+    Ii = lmoran[, "Ii"],                  # Local Moran's I statistic
+    EIi = lmoran[, "E.Ii"],               # Expected value of Ii
+    VarIi = lmoran[, "Var.Ii"],           # Variance of Ii
+    ZIi = lmoran[, "Z.Ii"],               # Z-scores
+    p_value = lmoran[, "Pr(z != E(Ii))"]  # P-values for two.sided test
+  ))
+}
+```
+
+![Areas with negative, no and positive spatial autocorrelation conducted from two-sided Local Moran's I Statistic](Images/local_autocorrelation.png)
+
+The groups with positive spatial autocorrelation under the `"two-sided"` alternative hypothesis revealed the same patterns as those obtained from the one-sided `"greater"` alternative hypothesis. From 2019 to 2022 (excluding 2021), negative spatial autocorrelation was observed in the state of Borsod-Abaúj-Zemplén in Hungary. Negative spatial autocorrelation means that surrounding areas have dissimilar values. This state is bordered on one side by Slovakian states with high tree coverage and on the other side by Hungarian states with the lowest tree percentage values in the dataset.
+
+**Moran's I Clusters**
+
+As we have seen in the section about Moran's plots, they divide information into four quadrants. Based on Moran's I statistics and information provided through the plot, we are able to separate our data points into four clusters: **Low-Low**, **High-High**, **High-Low** and **Low-High**. To detect clusters, we first have to run `localmoran()` function as we did in previous step, we are again going to access the `"two.sided"` alternative hypothesis and to obtain clusters of each type we are going going to use information provided by the Moran's I scatterplot given by previously mentioned function `moran.plot()`.
+
+We are going to run `moran.plot()` for tree percentage varioable for only one year to see now the resulting data frame looks like for it.
+
+```{r eval=FALSE, include=TRUE}
+mp <- moran.plot(as.vector(scale(data_with_state_boarders$tree_percentage_2018)), lw)
+head(mp)
+```
+
+![Moran's I Scatterplot showing the scaled values against spatially lagged values for tree percentage in 2018](Images/Rplot05.png)
+
+![](Images/Screenshot%20from%202024-10-03%2011-34-01.png)
+
+We identify cluster types using the quadrants of the scaled values `(mp$x)` and their spatially lagged values `(mp$wx)`, along with the p-values from the local Moran's I for each area
+
+`(data_with_state_boarders$p_value_ts_year_column)`. The clusters are classified as follows: areas with a significant local Moran's I are classified as *high-high* if both the value and its corresponding spatially lagged value are positive, *low-low* if both are negative, *high-low* if the value is positive but the spatially lagged value is negative, and *low-high* if the value is negative but the spatially lagged value is positive.
+
+To represent these cluster types, we create a `quadrant` variable for each area, based on its value, spatially lagged value, and p-value. Specifically, quadrants 1, 2, 3, and 4 correspond to *high-high*, *low-low*, *high-low*, and *low-high* clusters, respectively, while quadrant 5 represents non-significant areas.
+
+```{r eval=FALSE, include=TRUE}
+data_with_state_boarders$quadrant_2018 <- NA
+
+# high-high
+data_with_state_boarders[(mp$x >= 0 & mp$wx >= 0) &
+    (data_with_state_boarders$p_value_ts_tree_percentage_2018 <= 0.05), "quadrant_2018"] <- 1
+
+# low-low
+data_with_state_boarders[(mp$x <= 0 & mp$wx <= 0) &
+    (data_with_state_boarders$p_value_ts_tree_percentage_2018 <= 0.05), "quadrant_2018"] <- 2
+
+# high-low
+data_with_state_boarders[(mp$x >= 0 & mp$wx <= 0) &
+    (data_with_state_boarders$p_value_ts_tree_percentage_2018 <= 0.05), "quadrant_2018"] <- 3
+
+# low-high
+data_with_state_boarders[(mp$x <= 0 & mp$wx >= 0) &
+    (data_with_state_boarders$p_value_ts_tree_percentage_2018 <= 0.05), "quadrant_2018"] <- 4
+
+# non-significant
+data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_2018 > 0.05),
+                         "quadrant_2018"] <- 5
+```
+
+We will repeat this process for each year and we than get corresponding plot:
+
+|                                                           |                                                           |
+|------------------------------------|------------------------------------|
+| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+
+The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
+
+The blue areas also indicate positive spatial autocorrelation, but in this case, they represent regions where states with low tree percentages are surrounded by other low-value states. As observed previously, these regions are located in Hungary and northern Germany.
+
+The only state with negative spatial autocorrelation, as identified in the previous section, is Borsod-Abaúj-Zemplén in Hungary, which showed negative spatial autocorrelation in 2019, 2020, and 2022. Now, we see that this is due to its *High-Low* classification, meaning that the tree percentage in the state itself is high, but its spatially lagged value is low, as it is surrounded by neighboring Hungarian states with significantly lower tree percentages. This prevents it from being clustered with those lower-value states. Similarly, it cannot be grouped with the Slovakian territories to its north, which have much higher tree percentages (around 50%) compared to the 30% observed in Borsod-Abaúj-Zemplén.
+
+## Temporal autocorrelation
+
+As we have seen in previous section, some regions of Central Europe experience strong spatial autocorrelation, now we want to also analyze the temporal autocorrelation of tree percentage to understand the stability and consistency of tree cover across different regions over time. **Temporal autocorrelation** refers to the relationship between a variable's values at different time points---in this case, the tree percentage from one year to the next.
+
+By examining how the tree percentage in one year is correlated with the tree percentage in the previous year, we can assess whether regions with high (or low) tree cover maintain their levels over time. This helps to identify trends and patterns in tree cover stability, as well as detect regions that may experience significant changes between consecutive years.
+
+In order to work with this data as time series, we first have to convert it from wide format to long format, so that we can access simple visualization techniques:
+
+```{r eval=FALSE, include=TRUE}
+time_series_data <- data_with_state_boarders %>%
+  select(shapeName, starts_with("water_percentage"), starts_with("tree_percentage"),
+         starts_with("flooded_vegetation_percentage"), starts_with("crops_percentage"),
+         starts_with("built_area_percentage"), starts_with("bare_ground_percentage"),
+         starts_with("snow_ice_percentage"), starts_with("clouds_percentage"),
+         starts_with("rangeland_percentage"), starts_with("burned_area"),
+         starts_with("CO2_total"), starts_with("PM25_total"),
+         starts_with("TPC_total"), starts_with("NMHC_total"),
+         starts_with("OC_total"), starts_with("CH4_total"),
+         starts_with("SO2_total"), starts_with("BC_total")) %>%
+  pivot_longer(cols = -shapeName,
+               names_to = "parameter",
+               values_to = "value") %>%
+  mutate(year = as.integer(str_extract(parameter, "\\d{4}")),
+         parameter = str_remove(parameter, "_\\d{4}")) %>%
+  pivot_wider(names_from = parameter, values_from = value) %>%
+  group_by(shapeName, year) %>%
+  summarize(across(everything(), mean, na.rm = TRUE), .groups = 'drop')
+
+
+time_series_data <- data_with_state_boarders %>%
+  select(shapeName, shapeGroup, total_area_km2) %>%
+  left_join(time_series_data, by = "shapeName")
+```
+
+![Tree Percentage changes in central Europe over time](Images/temporalautocorrelation.png)
+
+Just by looking at the time series data of `tree_percentage` in our data set, we get an idea of its consistency over time and slight changes that each state experienced, but to understand the dynamics of tree percentage over time, we calculated the correlation between the tree percentage values in one year and the corresponding values from the previous year (i.e., the **lagged values**). This approach helps quantify how much a region's tree cover in a given year is influenced by its tree cover in the preceding year. The rationale behind this is that if a region's tree percentage is strongly correlated with its value from the previous year, it implies a level of **stability** or **persistence** in tree coverage. Conversely, a weak or negative correlation would suggest potential **fluctuations** or **changes** in forestation.
+
+The correlation between the tree percentage values and their lagged values is computed using **Pearson correlation**. Pearson correlation quantifies the linear relationship between two variables---in this case, the tree percentage for a given year and the tree percentage from the previous year (lagged values). The formula for Pearson correlation between two variables $X$ (tree percentage) and $Y$ (lagged tree percentage) is:
+
+$$
+r = \frac{\sum{(X_i - \bar{X})(Y_i - \bar{Y})}}{\sqrt{\sum{(X_i - \bar{X})^2} \sum{(Y_i - \bar{Y})^2}}}
+$$
+
+Where:
+
+-   $r$ is the Pearson correlation coefficient, ranging from -1 (perfect negative correlation) to +1 (perfect positive correlation).
+
+-   $X_i$ and $Y_i$ are the individual data points of tree percentage and lagged tree percentage, respectively.
+
+-   $\bar{X}$ and $\bar{Y}$ are the mean values of tree percentage and lagged tree percentage.
+
+A value of $r \approx 1$ indicates a strong positive correlation, meaning that regions with high tree percentages in one year are likely to have high tree percentages in the following year and vice versa for regions with low tree percentage. A value of $r \approx -1$ suggests an inverse relationship, where regions with high tree percentages in one year have low tree percentages in the following year, while $r \approx 0$ suggests no relationship between the values.
+
+The process:
+
+1.  We introduced a lag by creating a new variable representing the tree percentage of the previous year. This lagging operation shifts the data by one time unit (year) for each region.
+
+2.  For each region, the Pearson correlation between the tree percentage values in a given year and the values from the previous year (lagged values) was computed. This process captures the extent to which the tree percentage in year $t$ is dependent on the tree percentage in year $t-1$.
+
+3.  A high positive correlation for a region implies that the tree coverage in that region indicates relatively same patterns in tree cover growth/loss over time. A low or negative correlation suggests that the region may experience more dynamic changes in tree cover from one year to the next - either tree cover growth or loss without clear pattern.
+
+```{r eval=FALSE, include=TRUE}
+time_series_data <- time_series_data %>%
+  arrange(shapeName, year)  # Arrange data by region and year
+
+# Create lagged variable for tree percentage
+time_series_data <- time_series_data %>%
+  group_by(shapeName) %>%
+  mutate(lag_tree_percentage = lag(tree_percentage))
+
+# Compute correlation between tree_percentage and lag_tree_percentage
+correlation_results <- time_series_data %>%
+  summarise(correlation = cor(tree_percentage, lag_tree_percentage, use = "complete.obs"))
+```
+
+![Scatter plot showing the relationship between tree percentage and its lagged tree percentage for each region. Each point represents a region's tree percentage in one year versus its percentage in the previous year. The color represents different regions, and the trend lines show the linear relationship for each region.](Images/tmpautocorr.png)
+
+As we can see on the plot, there is a clear **positive linear relationship** between tree percentage and the lagged tree percentage. This suggests that if a region had a high tree percentage in one year, it likely had a similarly high percentage in the previous year (and vice versa for low tree percentages). The points follow a nearly perfect diagonal line, indicating that the tree percentage in any given year is highly correlated with the tree percentage in the previous year. This means that regions tend to have **consistent tree cover over time**. The small deviations from the diagonal line indicate slight year-to-year fluctuations in tree percentages. However, these fluctuations appear to be minor, reinforcing the idea that tree cover tends to be stable over time for most regions. There are a few regions where the points are slightly farther from the diagonal line, indicating that these regions experienced more significant changes in tree percentage between consecutive years.
+
+To further investigate the trend of this strong linear relationship, we will closely examine each region to determine whether they exhibit a positive or negative correlation.
+
+![Correlation between tree percentage and its lagged values for each region.](Images/tempcor.png)
+
+The regions with blue bars represent a **positive correlation** between tree percentage and its lagged value. This means that these regions tend to stay stable in their tree cover growth/loss over time. A prime example of this is **Thüringen** in Germany, where the tree percentage change has shown stableness year after year. Following plots from the Shiny-App illustrates tree change behaviour of this state:
+
+|                                                           |                                                           |
+|:-----------------------------------|------------------------------------|
+| ![](Images/Screenshot%20from%202024-10-03%2022-44-40.png) | ![](Images/Screenshot%20from%202024-10-03%2022-44-53.png) |
+| ![](Images/Screenshot%20from%202024-10-03%2022-45-05.png) | ![](Images/Screenshot%20from%202024-10-03%2022-45-16.png) |
+| ![](Images/Screenshot%20from%202024-10-03%2022-45-28.png) |                                                           |
+
+![](Images/Rplot02.png)
+
+On the other hand, the red bars represent regions with a **negative correlation**, indicating that the tree percentage has been experiencing inconsistent changes over time, whether it was a tree growth or tree loss. Region of Gyor in Hungary has shown such strong behaviour in experiencing such different patterns over the years as shown in plots below:
+
+|                                                           |                                                           |
+|------------------------------------|------------------------------------|
+| ![](Images/Screenshot%20from%202024-10-03%2022-41-31.png) | ![](Images/Screenshot%20from%202024-10-03%2022-41-48.png) |
+| ![](Images/Screenshot%20from%202024-10-03%2022-42-04.png) | ![](Images/Screenshot%20from%202024-10-03%2022-42-19.png) |
+| ![](Images/Screenshot%20from%202024-10-03%2022-42-33.png) |                                                           |
+
+![](Images/Rplot03.png)
+
+Most regions fall within the correlation range of **-0.5 to 0.5**, suggesting that, for these regions, changes in tree percentage from year to year are not as pronounced. This indicates that tree cover remains relatively stable over time for many areas. This stability is further supported by the earlier scatterplot, where tree percentages showed a strong linear relationship with their lagged values, confirming that significant fluctuations are not common across the dataset, although they can happen, but when that is the case they are not so rigorous.
+
+Positive correlation alone doesn't reveal whether changes in `tree_percentage` are due to tree growth or loss. To address this, we further analyze whether regions with positive correlation are experiencing an increase or decrease in tree coverage over time. The goal is to determine if regions with positive correlation have seen constant tree growth or loss. To do this, we calculate the **slope of a linear regression** between tree percentage and time (year) for each positively correlated region. The slope of linear regression reveals how the dependent variable changes with each unit increase in the independent variable. In our case this would mean, how much the tree cover increases/decreases over time. For example with every passing year, tree cover in a specific region decreases two times.
+
+-   **Positive Slope**: Tree growth, indicating an increase in tree coverage.
+
+-   **Negative Slope**: Tree loss, showing a decrease in tree coverage.
+
+```{r eval=FALSE, include=TRUE}
+positive_corr <- correlation_results %>%
+  filter(correlation > 0)
+
+trend_results <- time_series_data %>%
+  filter(shapeName %in% positive_corr$shapeName) %>%
+  group_by(shapeName) %>%
+  summarise(slope = coef(lm(tree_percentage ~ year))[2])  # Extract the slope from linear regression
+
+positive_corr_trend <- positive_corr %>%
+  left_join(trend_results, by = "shapeName")
+```
+
+The results are presented in the plot, where regions with negative correlation are sorted by their slope values. Regions with a positive slope indicate regions that experienced slight constant tree growth. On the other hand, regions with a negative slope reflect areas that have experienced tree loss over the observed years.
+
+![Slope of Tree Percentage Over Time in Regions with Positive Correlation.](Images/slopepos.png)
+
+We observe a clear trend of decreasing tree percentage year after year in most regions. Only a few regions, such as Somogy in Hungary and the Czech capital, Prague, experienced tree growth during this period.
+
+Significant tree loss was observed in the regions of Kraj Vysočina (Czech Republic) and Ticino (Switzerland) where negative slope was around -2.. In 2018, Ticino had 48.6% tree cover, which decreased to around 41% in 2019 and 2020. Although there was a slight recovery with a 1% increase in 2021, this was followed by a sharp 7% decline in 2022, and a small 1% gain in 2023. Overall, Ticino has experienced a consistent decline in tree cover compared to its 2018 levels, and the previously observed negative correlation of -0.43 aligns with this downward trend.
+
+|                                                           |                                                           |
+|------------------------------------|------------------------------------|
+| ![](Images/Screenshot%20from%202024-10-03%2022-47-48.png) | ![](Images/Screenshot%20from%202024-10-03%2022-48-02.png) |
+| ![](Images/Screenshot%20from%202024-10-03%2022-48-18.png) | ![](Images/Screenshot%20from%202024-10-03%2022-48-42.png) |
+| ![](Images/Screenshot%20from%202024-10-03%2022-48-57.png) |                                                           |
+
+: Tree Cover Change in Ticino, Switzerland
+
+## Correlation Between Tree Percentage and Feature Variables
+
+In addition to analyzing the changes in tree percentage over time, it is important to consider other environmental variables that may have influenced these trends. Several factors, such as `crops_percentage`, `rangeland_percentage`, and `built_area_percentage`, could have an impact on tree cover. Understanding the relationship between these variables and tree percentage will provide a more comprehensive view of the factors contributing to tree growth or loss in various regions.
+
+One way to assess these relationships is by examining the correlations between `tree_percentage` and other land use variables. Specifically, we can explore whether increases in cropland or built-up areas are associated with decreases in tree cover, or if regions with more rangeland show different patterns. A **negative correlation** between tree cover and any of these variables would indicate an inverse relationship, where increases in one variable are associated with decreases in tree percentage. A **positive correlation** between tree cover and other variables would mean, that increase in one variable would affect increase in the other variable and vice versa for decrease.
+
+By examining these correlations, we aim to better understand how land use changes, such as agricultural expansion or urbanization, may have affected forest and tree cover in the regions we are analyzing. This will help us identify the broader environmental trends that are contributing to changes in tree coverage over the observed period.
+
+```{r eval=FALSE, include=TRUE}
+correlation_results <- time_series_data %>%
+  group_by(shapeName) %>%
+  summarise(
+    cor_crops = cor(tree_percentage, crops_percentage, use = "complete.obs"),
+    cor_rangeland = cor(tree_percentage, rangeland_percentage, use = "complete.obs"),
+    cor_built_area = cor(tree_percentage, built_area_percentage, use = "complete.obs")
+  )
+```
+
+### Accessing Correlation
+
+|                             |                                  |                              |
+|-----------------------|--------------------------|-----------------------|
+| ![](Images/treecropcor.png) | ![](Images/treerangelandcor.png) | ![](Images/treebuiltcor.png) |
+
+: Correlation of Tree Percentage and Crops percentage, Rangeland Percentage and Built Area Percentage.
+
+#### Correlation Between Tree Percentage and Built Area Percentage
+
+The correlation between tree percentage and built area percentage reveals diverse regional trends:
+
+-   **Positive Correlation**: Regions such as **Schleswig-Holstein** and **Thurgau** exhibit positive correlations (blue bars). In these areas, urbanization seems to coexist with tree coverage, indicating that efforts may be in place to preserve trees despite urban expansion.
+
+![Tree Percentage and Built Area Percentage Over years in Region of Thurgau, Switzerland](Images/Screenshot%20from%202024-10-04%2012-33-45.png)
+
+![Tree Percentage and Built Area percentage in Schleswig-Holstein, Germany](Images/Screenshot%20from%202024-10-04%2012-32-51.png)
+
+As indicated by the highly positive correlation between tree percentage and built area percentage, regions where built areas expanded did not experience tree loss. Instead, these regions actually saw tree growth during those years. Conversely, in cases where built area slightly decreased, tree cover also experienced some loss. This may be explained by broader land-use or economic changes. For instance, a reduction in built area could reflect urban decay, infrastructure degradation, or economic shifts that not only reduce construction but also lead to neglect of green spaces. It is worth to mention that in these areas tree cover is also not the main type of land cover but rater crops and expansion of this variable could be the one that in the same time has affected built area decrease and tree cover decrease.
+
+-   **Negative Correlation**: On the other hand, regions like **Zahodna Slovenia** and the **Region of Nitra** show strong negative correlations (red bars). This suggests that tree cover is being replaced by built-up areas, likely due to urban development or infrastructure expansion. Observations for the Region of Nitra in Slovakia indicate that in years where there was slight growth in built areas, tree cover experienced a corresponding slight decrease. Conversely, in years where a reduction in built area percentage was observed, the region saw a subsequent increase in tree cover.
+
+    ![](Images/Screenshot%20from%202024-10-03%2023-55-15.png)
+
+#### Correlation Between Tree Percentage and Crops Percentage
+
+The correlation between tree percentage and crop percentage shows a generally negative relationship:
+
+-   **Positive Correlation**: A few regions, such as **Zug** and **Sachsen-Anhalt**, exhibit a slight positive correlation, suggesting that these areas are able to maintain or increase tree cover while expanding agricultural activity.
+
+![Tree Percentage and Built Area percentage in Zug, Switzerelnd](Images/Screenshot%20from%202024-10-04%2012-40-22.png)
+
+When examining the values for Zug over those years, we observe that the percentage of land used for agricultural activities and the percentage of tree cover are nearly identical. Both tree percentage and crops percentage experienced growth and loss in the same years. However, the changes in built area contradicted the trends for both variables. In years when crops and tree cover were growing, built areas slightly decreased (with small changes), and when built areas expanded, both tree and crops cover decreased.
+
+This behavior can be explained by examining the tree cover raster for each year, which shows that tree cover and crop areas in Zug are almost "*disjoint*" (between areas with tree cover and crops cover, there is always some area of rangeland cover). In some parts of Zug, these areas border each other, but over the years, any growth in tree or crop areas did not occur where they border each other, but rather in regions where they do not affect one another. On the other hand, built areas are primarily located within the crops and rangeland areas (while tree cover is mostly in the mountainous Alpine regions, where settlements are rare). Thus, the expansion of built areas negatively affected the percentage of agricultural land use (crops).
+
+|                               |                               |
+|-------------------------------|-------------------------------|
+| ![](Images/zug_cover2018.png) | ![](Images/zug_cover2019.png) |
+| ![](Images/zug_cover2020.png) | ![](Images/zug_cover2021.png) |
+| ![](Images/zug_cover2022.png) | ![](Images/zug_cover2023.png) |
+
+: Land Cover Change in Zug over the course of years 2018 to 2023. As these changes are bets visible when animated, you can view an animated image that displays changes in land cover of Zug [here](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/zug_landcover_animation.gif).
+
+-   **Negative Correlation**: A far more common trend is a negative correlation, seen in regions like **Somogy** and **Hlavní město Praha**. In these areas, as crop cultivation expands, tree coverage decreases, likely due to land conversion from forest to agricultural use.
+
+As observed from the land cover rasters of the Somogy area in Hungary, the two predominant land cover types are tree and crop areas, which are adjacent to each other. In this case, it is logical that changes in these two parameters significantly affect each other, with the positive expansion of crop areas contributing to the decrease in tree cover in the region.
+
+|                         |                         |
+|-------------------------|-------------------------|
+| ![](Images/somogy1.png) | ![](Images/somogy2.png) |
+| ![](Images/somogy3.png) | ![](Images/somogy4.png) |
+| ![](Images/somogy5.png) | ![](Images/somogy6.png) |
+
+: Land Cover Change in Somogy over the course of years 2018 to 2023. As these changes are better visible when animated, you can view how crop cover and tree cover replace each other in animated manner [here](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/somogy_landcover_animation.gif).
+
+Similarly, in Prague, the capital of the Czech Republic, crop and tree areas are found along the city borders in less urbanized areas. Once again, it is evident that as agricultural land increases, the tree percentage decreases.
+
+![Land Use in Prague in 2018, where can be observed how crops and tree areas are satured alongside city boarders.](Images/Screenshot%20from%202024-10-04%2014-23-57.png)
+
+As negative correlation trends are mostly present in correlation table of tree percentage and crops percentage, this indicates pressure that agricultural activities can place on forested areas, with **most regions showing that expanding crop production leads to a reduction in tree cover**.
+
+#### Correlation Between Tree Percentage and Rangeland Percentage
+
+Similar to the crops percentage, the correlation between tree percentage and rangeland percentage shows largely negative relationships:
+
+-   **Positive Correlation**: Some regions, such as **Baranya** and **Nograd Voivodeship**, show positive correlations, where tree cover and rangeland areas appear to coexist. This may indicate effective land management that accommodates both grazing and forest conservation.
+
+-   **Negative Correlation**: However, the majority of regions, like **Hessen** and **Nordrhein-Westfalen**, exhibit strong negative correlations, implying that as rangeland expands, tree cover diminishes, likely due to forest clearing for grazing purposes.
+
+#### Spatial distribution of correlation between tree percentage and feature variables
+
+|                         |                         |                         |
+|------------------------|------------------------|------------------------|
+| ![](Images/Rplot06.png) | ![](Images/Rplot07.png) | ![](Images/Rplot08.png) |
+
+: Spatial distribution of correlation between tree percentage and feature variables.
+
+From the maps in the figure above, it can be observed that areas with high negative or high positive correlation for each category (tree percentage vs. crops percentage, tree percentage vs. built area percentage, and tree percentage vs. rangeland percentage) are mostly spatially grouped, as neighboring states tend to have similar land cover usage. In regions where a negative correlation between tree percentage and other variables was observed, it is due to competition for land resources, meaning crop areas, rangeland areas, or built-up areas are directly adjacent to tree cover. Conversely, in areas where a positive correlation was observed between tree percentage and another variable, there is typically less spatial proximity between tree cover and the other variable. Instead, both are separated by a third type of land use. When this third land cover expands or decreases, it affects both tree cover and the comparison variable, leading them to increase or decrease together.
+
+#### Conclusion
+
+The relationships between various land use covers---such as crops, rangeland, and built areas---and tree percentage across different regions predominantly show negative correlations. This suggests that as agricultural activities, urban expansion, or other land uses increase, tree cover tends to decrease. This inverse relationship is most evident in regions where tree and crop areas or built-up zones are **spatially adjacent** or competing for land resources.
+
+In areas where agricultural expansion is necessary, such as in Somogy and suburbs of Prague, increased land use for crops has directly contributed to the loss of tree cover. Similarly, in urbanized regions, the growth of built areas often encroaches upon green spaces, further diminishing tree coverage. These dynamics highlight the trade-offs between development and environmental conservation, where land used for urbanization or agriculture tends to result in a reduction in tree-covered areas, particularly in regions where available land is already limited.
+
+# Spatio-temporal Clustering
+
+Spatio-temporal analysis is the final stage of this research, where we explore the changes in tree percentage not only across regions but also over time. This approach allows us to understand how tree coverage evolves spatially and temporally, providing insights into patterns of deforestation, reforestation, and land use shifts in different areas. By combining spatial data with temporal trends, we aim to uncover the dynamic relationships between environmental factors and land use practices, helping to identify regions that are undergoing rapid changes and those that remain relatively stable.
