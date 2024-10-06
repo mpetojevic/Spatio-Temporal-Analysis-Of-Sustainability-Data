@@ -3,13 +3,13 @@ title: "Spatio Temporal Analysis Of Sustainability Data in Central Europe"
 author: 'Marijana Petojevic'
 date: "26.09.2024"
 output:
+  html_document:
+    toc: yes
+    toc_depth: '4'
+    df_print: paged
   pdf_document:
     toc: yes
     toc_depth: 4
-  html_document:
-    toc: yes
-    toc_depth: '2'
-    df_print: paged
 subtitle: Bachelor Thesis in Computational Statistics
 ---
 
@@ -361,7 +361,7 @@ Tree cover loss is significant across all Central European countries, but the fa
 ## Spatial Autocorrelation
 
 ::: {#note style="background-color: #f0f7fb;      border-left: solid 4px #3498db;      line-height: 18px;      mc-auto-number-format: '{b}Note: {/b}';      overflow: hidden;      padding: 12px;"}
-**Note**: This section will include some code snippets, the whole code which you can run and play with it, can be found on my Github page in this document.
+**Note**: This and following sections will include some code snippets, the whole code which you can run and play with it, can be found on my Github page in [this document.](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Shiny-App/try.R)
 :::
 
 Spatial autocorrelation describes the extent to which a variable is correlated with itself across space. A similar concept is found in [Tobler's First Law of Geography](https://www.jstor.org/stable/143141?origin=crossref), which states that *"everything is related to everything else, but near things are more related than distant things".*
