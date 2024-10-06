@@ -1038,7 +1038,7 @@ rsquared_rf <- rsquared(time_series_data$tree_percentage, time_series_data$predi
 rsquared_xgb <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_xgboost)
 ```
 
-![R-squared Results.](Images/Screenshot from 2024-10-05 00-32-10.png)
+![R-squared Results.](Images/Screenshot%20from%202024-10-05%2000-32-10.png)
 
 The results show that XGBoost is the best-performing model compared to the others tested, as demonstrated by its R-squared value of nearly 1, indicating a near-perfect fit. This suggests that XGBoost is able to capture almost all the variability in the tree percentage, making it the most reliable for predictions in our dataset. Random Forest model also indicates high R-squared metric but as we have seen from its predictions, XGBoost stil outperforms it.
 
@@ -1112,14 +1112,204 @@ summary_by_region <- regional_comparison %>%
   )
 ```
 
-![Predictor Optimization Results by Region.](Images/Screenshot from 2024-10-05 16-35-17.png)
+![Predictor Optimization Results by Region.](Images/Screenshot%20from%202024-10-05%2016-35-17.png)
 
 As seen from the output, **91 regions** experienced improvements in tree percentage after the simulated changes in predictor variables. The **average yearly improvement** in regions where tree percentage increase was simulated was 3.06%. On the other hand **19 regions** experienced slight decline in tree cover percentage where yearly decline was -0.767%.
 
-![**Simulated vs Predicted Tree Percentage by Region.** Almost all regions in our dataset fall in the upper part of the scatterplot, indicating tree cover growth. However, there are a few regions where the average simulated tree growth remained unchanged, and some regions where the simulated tree growth, with adjusted predictor variables, was lower than expected. It\'s important to note that in some regions, tree percentage correlates positively with crops and built area percentages. This means that a reduction in these two variables can lead to a reduction in tree percentage. This typically occurs in regions where built area and crops are geographically disjoint from tree cover, separated by other types of land use.](Images/Rplot12.png)
+![**Simulated vs Predicted Tree Percentage by Region.** Almost all regions in our dataset fall in the upper part of the scatterplot, indicating tree cover growth. However, there are a few regions where the average simulated tree growth remained unchanged, and some regions where the simulated tree growth, with adjusted predictor variables, was lower than expected. It's important to note that in some regions, tree percentage correlates positively with crops and built area percentages. This means that a reduction in these two variables can lead to a reduction in tree percentage. This typically occurs in regions where built area and crops are geographically disjoint from tree cover, separated by other types of land use.](Images/Rplot12.png)
 
 In conclusion, land use management will need to carefully consider whether an average yearly tree cover growth of 3% is a desirable goal, or if the trade-off is too steep given the reduction in crops and settlement areas needed to achieve it. While increasing tree cover can be beneficial for the environment, it comes at the cost of important land use for citizens, agriculture, and infrastructure. However, with the implementation of the simulation function, there is flexibility to experiment with different scenarios and values. This allows for informed decision-making on how to best balance tree cover growth with other land use priorities.
 
 # Spatio-temporal Clustering
 
-Spatio-temporal analysis is the final stage of this research, where we explore the changes in tree percentage not only across regions but also over time. This approach allows us to understand how tree coverage evolves spatially and temporally, providing insights into patterns of deforestation, reforestation, and land use shifts in different areas. By combining spatial data with temporal trends, we aim to uncover the dynamic relationships between environmental factors and land use practices, helping to identify regions that are undergoing rapid changes and those that remain relatively stable.
+Spatio-temporal analysis is the final stage of this research, where we explore the changes in tree percentage not only across regions but also over time. This approach allows researchers to detect patterns, trends, and anomalies across geographical locations as well as time periods. By combining spatial data with temporal trends, we aim to uncover the dynamic relationships between environmental factors and land use practices, helping to identify regions that are undergoing rapid changes and those that remain relatively stable.
+
+Clustering methods generally focus either on spatial proximity or temporal behavior, but in many real-world applications, both dimensions are crucial. **Spatio-temporal clustering** accounts for the fact that regions can be similar based on where they are located (spatial) and how they behave over time (temporal). Combining these two aspects provides a more holistic understanding of how a region's attributes evolve in relation to its neighbors and over time.
+
+## The Challenges of Spatio-Temporal Clustering
+
+The main challenge in spatio-temporal clustering was finding the right algorithm capable of detecting spatially close regions that exhibit similar trends in tree percentage change over time. Existing literature primarily focuses on the concept of hotspots, where increasing values are observed in particular regions over a specific time span.
+
+For my research on sustainability data in Central Europe, I explored various spatio-temporal clustering approaches. One of the most popular methods for this type of analysis is ST-DBSCAN (Spatial-Temporal Density-Based Spatial Clustering of Applications with Noise). As a density-based algorithm, DBSCAN partitions data into clusters based on the distance between points. When a temporal dimension is also added, the algorithm assesses both spatial and temporal distances to cluster the data accordingly. It uses two key parameters: `eps`, which represents the minimum spatial distance between two objects, and `eps2`, which defines the minimum temporal distance. Since the data must be properly scaled for the algorithm to work, finding the appropriate parameters that reveal meaningful clustering can be quite challenging and I while trying to make a use of this algorithm I wasn't able to find proper parameters that would reveal meaningful clustering. The algorithm can be found [here](https://github.com/CKerouanton/ST-DBSCAN/blob/master/stdbscan.R).
+
+While searching for a more suitable approach that could better capture our data and make more informed clustering decisions, I came across a novel spatio-temporal clustering algorithm introduced by [Soudeep and Sayar in 2023](https://www.sciencedirect.com/science/article/pii/S0167947323001214). Their algorithm was successfully applied to data capturing the development of COVID-19 in the United States, effectively identifying similar trends in neighboring regions. Given our goal of identifying spatially close regions that show similar trends in tree change over time, I decided to apply their algorithm, which leverages a weighted combination of spatial and temporal distance matrices. This approach also utilizes gap statistics to determine the optimal number of clusters and uses PAM Clustering to make final decision based on combined distance matrix that includes both spatial and temporal distances.
+
+## PAM (Partitioning Around Medoids) For Spatio-Temporal Clustering
+
+### General Idea of PAM Clustering
+
+The PAM (Partitioning Around Medoids) clustering algorithm is well-suited for spatio-temporal data because it can efficiently handle mixed types of distances (both spatial and temporal) and is robust against noise. Unlike K-means, which uses centroids, PAM works by selecting actual observations (medoids) to represent clusters.
+
+The core idea behind PAM is to:
+
+1.  **Select Medoids**: Choose actual data points as representative objects for each cluster (called medoids).
+
+2.  **Assign Clusters**: Each data point is assigned to the nearest medoid based on the combined distance metric (spatial and temporal).
+
+3.  **Optimize Medoids**: Iteratively improve the choice of medoids to minimize the overall dissimilarity within clusters.
+
+### Why PAM for This Study?
+
+In my project, I explored various clustering techniques, including those designed for purely spatial or purely temporal data. However, these approaches failed to produce meaningful results, especially in terms of capturing the joint spatial-temporal behavior of tree coverage across different regions.
+
+The algorithm introduced in the paper [*A novel spatio-temporal clustering algorithm with applications on COVID-19 the United States*](https://www.sciencedirect.com/science/article/pii/S0167947323001214) provided above presents a powerful approach for combining spatial and temporal distances in a meaningful way. It allowed me to blend spatial proximity and temporal trends into a single combined distance matrix, ensuring that regions were clustered not just by where they were located, but also by how their tree coverage changed over time.
+
+PAM clustering was chosen because:
+
+1.  It handles **non-Euclidean distance matrices** (like the combined spatial-temporal matrix).
+
+2.  It is robust to **outliers and noise** in the data.
+
+3.  It provides **interpretable medoids**, which are actual data points representing clusters.
+
+4.  It allows for flexibility balancing the importance of spatial and temporal factors through the use of a weighted parameter, $\alpha$. This enables us to experiment with how much influence each component (spatial or temporal) has on the clustering results, ensuring that we can capture meaningful patterns in the data that reflect both the geographical and temporal aspects of tree coverage changes.
+
+### The Approach
+
+The spatio-temporal clustering in this study was carried out by constructing two distance matrices: one representing spatial distances between regions and the other representing temporal differences in tree percentage over the years. These distances were then normalized using the Frobenius norm to ensure that both spatial and temporal distances contributed comparably to the final clustering.
+
+```{r eval=FALSE, include=TRUE}
+polygon_distances <- st_distance(data_with_state_boarders$geometry)
+spatial_distances <- as.matrix(polygon_distances)
+
+temporal_data <- data %>% 
+  select(starts_with("tree_percentage")) %>%  
+  as.matrix()
+
+temporal_distances <- as.matrix(dist(temporal_data)) # Eucledian distance between time series
+
+normalize <- function(mat) {
+  mat / sqrt(sum(mat^2))  # Frobenius norm
+}
+
+spatial_distances_norm <- normalize(spatial_distances)
+temporal_distances_norm <- normalize(temporal_distances)
+
+```
+
+Adjusting the weighting parameter $\alpha$, allows us to explore various configurations of spatio-temporal balance. When $\alpha = 1$, only temporal differences are considered, and when $\alpha = 0$, only spatial distances are considered. When $\alpha$ (i.e. $\alpha=0.1)$ is close to zero, geographically close regions are more likely to be clustered together regardless of how their tree percentage changes over time. On the other hand, when $\alpha$ is close to one (i.e. $\alpha = 0.9)$ emporal trends dominate, meaning regions with similar changes in tree percentage over time are clustered together, even if they are geographically distant.
+
+The general formula used to compute the **combined distance matrix** for the actuall clustering is:
+
+$$
+D_{combined} = \alpha \times D_{temporal} + (1-\alpha)\times D_{spatial}
+$$
+
+$D_{temporal}$ is in our case distance matrix representing differences in tree percentage over time, but can be calculated for any combination of variables. In the further section, we are going to cluster data using this approach based on temporal data about tree cover and other predictor variables, but right now, we are going to focus on clustering based only on temporal data of tree percentage and its spatial distribution. $D_{spatial}$ is matrix of spatial distances between regions.
+
+The **gap statistic** was used to determine the optimal number of clusters for each value of $\alpha$ by comparing the within-cluster variance for a given number of clusters to that of a reference distribution, helping to find the number of clusters that best fits the data without overfitting.
+
+```{r eval=FALSE, include=TRUE}
+for (alpha in seq(0.1, 0.9, by = 0.1)) {
+  
+  combined_distances <- alpha * temporal_distances_norm + (1 - alpha) * spatial_distances_norm
+  
+  gap_stat <- clusGap(combined_distances, FUN = pam, K.max = 10, B = 50)
+  
+  optimal_clusters <- maxSE(f = gap_stat$Tab[, "gap"], SE.f = gap_stat$Tab[, "SE.sim"])
+
+  set.seed(123)
+  pam_result <- pam(combined_distances, k = optimal_clusters)
+  
+  data_with_state_boarders$cluster <- pam_result$clustering
+  
+  p <- ggplot(data_with_state_boarders) +
+    geom_sf(aes(fill = as.factor(cluster)), color = "black", size = 0.5) +
+    labs(
+      title = paste("alpha =", alpha, "nclust =", optimal_clusters),
+      fill = "Clusters"
+    ) +
+    theme_minimal()
+  
+  plots_list[[paste("alpha_", alpha, sep = "")]] <- p
+}
+```
+
+![Clustering Results for Variing Alpha Values.](Images/Rplot13.png)
+
+At lower alpha values, such as 0.1 or 0.2, regions are clustered more heavily based on geographic proximity. This is evident as neighboring regions are more likely to share the same cluster, despite having different temporal tree percentage trends. As alpha increases to 0.5 and beyond, the temporal trends in tree percentage change become more dominant. This results in geographically distant regions, such as northern and southern parts of the map, being grouped together because they show similar tree percentage trends over time.
+
+Interestingly, the number of clusters fluctuates with different alpha values. For example, at alpha = 0.4, there are only two clusters, suggesting that either spatial or temporal distances alone are not enough to differentiate regions meaningfully. In contrast, at alpha values like 0.5 or 0.9, we observe 10 distinct clusters, indicating that both spatial and temporal information are contributing more evenly to the clustering, leading to a more detailed segmentation. If we take a look at tree percentage trends by regions for high alpha value, we will observe that regions that showed mostly identical trends in tree cover change, have been clustered together into clusters that barely have overlapping points.
+
+![Tree Percentage Trends Over Years By Cluster for $\alpha=0.9$.](Images/alpha09.png)
+
+### Including All Feature Variables to Clustering
+
+In this section, we aim to compare the results of **spatio-temporal clustering** based on two distinct approaches: clustering using **only tree percentage** as the temporal variable and clustering using **multiple land-use variables**, including tree percentage, water percentage, crops percentage, built area percentage, and others. By analyzing these two different clustering setups, we can explore how additional land-use features impact the formation of clusters and whether they provide further insights compared to using tree percentage alone.
+
+I also experimented with incorporating **pollution variables** (such as CO2 and PM25 levels) into the clustering process. However, as these variables are not consistently present in the data over time and are subject to variability (such as wildfire events), they proved less reliable for our clustering task. As we observed in the **XGBoost feature importance analysis**, pollution variables had almost no impact on the tree percentage prediction. Consequently, including them in the clustering process resulted in less informative clusters, often causing all regions to be grouped into the same cluster, offering no meaningful distinctions.
+
+```{r eval=FALSE, include=TRUE}
+temporal_data <- data %>% 
+  select(starts_with(c("tree_percentage", "water_percentage", "crops_percentage",
+                       "built_area_percentage", "rangeland_percentage", 
+                       "bare_ground", "snow_ice", "flooded"))) %>%  
+  mutate(across(everything(), as.numeric)) %>%  
+  as.matrix()
+```
+
+The goal of this comparison is to determine the extent to which tree coverage trends alone can capture spatial and temporal patterns in our data versus the added benefit of incorporating other critical land-use factors. These additional variables play a significant role in the competition for land use, which may directly influence the change in tree cover over time. We will explore clustering with $\alpha = 0.5$ and give temporal and spatial dimensions identical importance.
+
+|                         |                         |
+|-------------------------|-------------------------|
+| ![](Images/Rplot15.png) | ![](Images/Rplot14.png) |
+
+: Spatio-Temporal clustering based on only tree percentage as temporal dimension vs. multiple land-use variables as temporal dimension.
+
+#### Clustering Comparison
+
+-   **Tree Percentage Only**: he regions tend to cluster into larger, contiguous areas. This continuity suggests that neighboring regions with similar tree coverage changes tend to be grouped together. Spatial distribution of regions also contributes to the clustering results attempting to group geographically close regions with similar trends together.
+
+![](Images/alpha05trend.png)
+
+-   **Multiple Variables**: The clusters become more **fragmented** and **localized**. This fragmentation likely reflects the more complex land-use dynamics in these regions. Regions where built-up areas and agricultural activities are significant now influence cluster membership, showing that the competition for land use plays a larger role than just changes in tree cover. Interestingly, a smaller cluster emerges in Switzerland, grouping a few regions together, which presents an unusual and unexpected pattern in the analysis and needs further inspection to why this assignment would make sense.
+
+#### Feature Importance For Clustering
+
+As noted before, small clusters emerge in our data set, taht are mainly surrounded by members of larger clusters and it remained unclear why certain regions were clustered together as the ones in Switzerland, where quite a few neigbouring regions were assigned to different clusters. To investigate this further, we applied the XGBoost algorithm to each cluster individually. The objective was to evaluate the importance of land-use features, such as crop percentage, built area percentage, and water percentage, in determining cluster membership, providing insights into the drivers behind the clustering patterns we observed.
+
+```{r eval=FALSE, include=TRUE}
+importance_list <- list()
+for (clust in unique(data_with_state_boarders$cluster)) {
+  
+  subset_data <- time_series_data %>% filter(cluster == clust)
+  
+  model <- xgboost(data = model.matrix(~ crops_percentage + built_area_percentage 
+                                       + water_percentage + rangeland_percentage 
+                                       + flooded_vegetation_percentage 
+                                       + bare_ground_percentage +  snow_ice_percentage - 1,
+                                       subset_data),
+                   label = subset_data$tree_percentage, 
+                   nrounds = 50, objective = "reg:squarederror", verbose = 0)
+  
+  importance <- xgb.importance(feature_names = colnames(model.matrix(~ crops_percentage 
+                                 + built_area_percentage + water_percentage  
+                                 + rangeland_percentage + flooded_vegetation_percentage 
+                                 +bare_ground_percentage +  snow_ice_percentage - 1,
+                                 subset_data)), model = model)
+  
+  importance$Cluster <- as.factor(clust)
+  
+  importance_list[[paste("Cluster", clust)]] <- importance
+}
+```
+
+![Feature Importance For Assigning Regions to Clusters](Images/clustfeatimportance.png)
+
+One of the most notable clusters is Cluster 8, which includes regions in Switzerland. The key factors here are `snow_ice_percentage` and `rangeland_percentage`, which strongly influence tree coverage in these regions. This aligns well with the geography of Switzerland, known for its mountainous terrain where rangelands dominate and snow/ice cover is prevalent, especially in higher altitudes. Crops percentage plays a significant role in Cluster 8, which explains why the western regions of Switzerland and Saarland in Germany were assigned to this cluster. Clusters 2, 4, and 7 are primarily dominated by the rangeland factor, which is expected given their location in mountainous regions across Germany, Austria, and Switzerland. In addition to rangelands, crops also have a strong influence, particularly in Cluster 2, where several Hungarian regions were grouped due to their agricultural activities. On the other hand, Clusters 3, 5, and 6 are primarily driven by crops percentage, with Cluster 3 largely encompassing agricultural land in Poland and Cluster 5 land of same use in Germany. For Cluster 5 it's also important to note that `built_are_percentage` has heavy influence to it, explaining why region of Czech capital Prague which is mainly completely built with crops on city boarders is enclosed by this cluster.
+
+# Conclusion and Discussion
+
+In this research project, we explored the spatio-temporal dynamics of sustainability data across Central Europe, focusing on the interplay between tree coverage and other land-use and environmental variables. The journey started with data collection and processing, where we brought together datasets covering tree percentages, water bodies, agricultural land, built areas, and other land cover types. This data was further enriched with information on emissions and pollution levels to provide a holistic view of environmental conditions across the region.
+
+The first stage involved understanding the temporal and spatial trends in tree coverage. We looked at descriptive statistics and created visualizations that highlighted how tree percentages have evolved over time in different regions. This gave a sense of where tree cover was declining and which areas remained relatively stable. As the analysis progressed, I found that many of the trends in tree coverage could be linked to competing land uses such as agriculture, urban expansion, and even natural features like rangelands and snow/ice cover in the mountainous regions.
+
+We then delved into spatio-temporal clustering to uncover deeper patterns. We were able to cluster regions not only based on their spatial proximity but also considering their temporal trends in key environmental features. This approach helped to identify regions that shared similar land-use dynamics over time, revealing clusters of areas facing similar challenges or undergoing similar transformations. The feature importance analysis revealed why certain regions grouped together, such as those in Switzerland where snow and ice coverage, as well as rangelands, played dominant roles. Meanwhile, regions focused on agriculture, particularly in Poland, were shaped primarily by the influence of crops percentage.
+
+However, not all variables contributed meaningfully. When I incorporated pollution and emissions data, the results were less informative, and many regions ended up being grouped into a single large cluster. This was consistent with the earlier finding in the XGBoost analysis, where pollution variables had minimal importance, likely due to the sporadic nature of the data or the lack of consistent emissions records across the years.
+
+There is potential to build on this work by incorporating socioeconomic factors such as population density or economic activity, which would provide a more comprehensive picture of human influence on land use. It would also be beneficial to find better suited polution data and discover its influences on the changes in tree percentage. Future research could refine the clustering approach by testing more advanced algorithms capable of handling the complex relationships between environmental features. There is also room to build predictive models that forecast how regions might evolve based on current land-use patterns and emerging environmental challenges.
+
+## Acknowledgment
+
+I would like to thank my supervisor, Prof. Dr. Laura Vana Gür, for giving me the opportunity to work on this topic and for guiding me through the process of my first scientific research.
