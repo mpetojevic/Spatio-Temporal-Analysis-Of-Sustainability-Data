@@ -673,11 +673,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                           |                                                           |
+|                                                            |                                                            |
 |------------------------------------|------------------------------------|
-| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -929,6 +929,196 @@ From the maps in the figure above, it can be observed that areas with high negat
 The relationships between various land use covers---such as crops, rangeland, and built areas---and tree percentage across different regions predominantly show negative correlations. This suggests that as agricultural activities, urban expansion, or other land uses increase, tree cover tends to decrease. This inverse relationship is most evident in regions where tree and crop areas or built-up zones are **spatially adjacent** or competing for land resources.
 
 In areas where agricultural expansion is necessary, such as in Somogy and suburbs of Prague, increased land use for crops has directly contributed to the loss of tree cover. Similarly, in urbanized regions, the growth of built areas often encroaches upon green spaces, further diminishing tree coverage. These dynamics highlight the trade-offs between development and environmental conservation, where land used for urbanization or agriculture tends to result in a reduction in tree-covered areas, particularly in regions where available land is already limited.
+
+## Model Fitting
+
+We aim to model and predict tree percentage based on multiple land-use and pollution-related variables. Understanding how different variables such as built area percentage, crops percentage, rangeland percentage, and pollution levels influence tree coverage is essential to guide environmental policies and land-use decisions. The primary goal is to fit a model that can accurately predict tree percentage using these variables.
+
+### Model Fitting Approaches
+
+We began by fitting several models to predict tree percentage, each of which was evaluated for performance:
+
+#### Linear Regression Model
+
+First we tried to fit a simple linear model where tree percentage is assumed to have a linear relationship with land-use and pollution-related variables.
+
+```{r eval=FALSE, include=TRUE}
+model <- lm(tree_percentage ~ built_area_percentage + crops_percentage 
+            + rangeland_percentage + water_percentage
+            + flooded_vegetation_percentage + bare_ground_percentage 
+            + snow_ice_percentage + burned_area
+            + CO2_total + PM25_total + TPC_total + NMHC_total 
+            + OC_total + CH4_total + SO2_total
+            + BC_total, data = time_series_data)
+time_series_data$predicted_lm <- predict(model)
+```
+
+![**Predicted vs. Actual Tree Percentage from Linear regression Model.** The linear regression model provided an initial understanding but showed not the best fit and high residuals, meaning the predictions were often far off from the actual values and grouped in clusters that overestimated or underestimated the actual tree percentage values. As observed in the previous section, where we analyzed the correlation between tree percentage and various other feature variables, tree percentage did not show positive correlations with most variables across regions. Negative correlations were predominant, and the values rarely followed a linear pattern, which explains why a linear model is not best-suited to our dataset.](Images/lm.png)
+
+#### Random Forest Regression
+
+Random Forest Regression Model combines multiple decision trees to create a single model. Each tree in the forest builds from different subset of the data and makes its own independent prediction, whereas the final prediction for the input is based on the average or weighted average of all the individual trees' predictions. This introduces a more flexible non-linear model which could help us capture more complex relationships between the tree percentage and predictor variables.
+
+```{r eval=FALSE, include=TRUE}
+model_rf <- randomForest(tree_percentage ~ built_area_percentage + crops_percentage 
+                         + rangeland_percentage + water_percentage
+                         + flooded_vegetation_percentage + bare_ground_percentage 
+                         + snow_ice_percentage + burned_area
+                         + CO2_total + PM25_total + TPC_total 
+                         + NMHC_total + OC_total + CH4_total + SO2_total
+                         + BC_total, data = time_series_data)
+time_series_data$predicted_rf <- predict(model_rf)
+```
+
+![**Predicted vs. Actual Tree Percentage from Random Forest Regression Model.** As many points closely follow the ideal line, it is suggested that Random Forest model generally performs well in predicting tree percentage. However, there are deviations, especially at higher and lower tree percentages, indicating that the model may have some difficulty accurately predicting very high or very high or very low tree percentage values. While the model seems to capture the overall trend, further tuning or more complex models might improve performance, especially in these extreme cases.](Images/Rplot10.png)
+
+There are two main clusters of points below and under the ideal (red) line. The one for tree percentages being between 0% and 10% tree percentage, where the model for these low values overestimated the actual tree percentage. The other one is grouping high tree percentage values (between 45 and 60% tree percentage) over the ideal line, meaning that the model has underestimated those values and predicted lower tree percentage than it actually should be the case.
+
+#### Neural Network Model
+
+Neural networks are a class of machine learning models inspired by the structure and function of the human brain, making them highly effective at capturing complex, non-linear relationships in data. Given the diverse and multi-dimensional nature of my dataset, which includes variables like built area percentage, crops percentage, and pollution levels, a neural network was a promising candidate for predicting tree percentage. By employing multiple hidden layers and non-linear transformations, the model has the potential to uncover intricate interactions between these variables that traditional linear models might overlook.
+
+```{r eval=FALSE, include=TRUE}
+
+nn_model <- nnet(tree_percentage ~ built_area_percentage + crops_percentage 
+                 + rangeland_percentage + water_percentage 
+                 + flooded_vegetation_percentage + bare_ground_percentage 
+                 + snow_ice_percentage + burned_area 
+                 + CO2_total + PM25_total + TPC_total + NMHC_total 
+                 + OC_total + CH4_total + SO2_total + BC_total,
+                 data = time_series_data, size = 10, linout = TRUE)
+
+time_series_data$predicted_nnet <- predict(nn_model, time_series_data)
+```
+
+Although neural networks are powerful, they can also be prone to overfitting, especially in cases where the data may not be sufficient or complex enough to warrant such a sophisticated approach. The neural network, though capable of handling the multi-dimensional nature of the data, struggled with accurate predictions, as reflected in the scatterplot comparing actual and predicted values.
+
+![**Actual vs. Predicted Tree Percentage From Neural Network Model.** There is a noticeable vertical clustering of points, which suggests that the model is assigning similar predicted values regardless of the actual variation in tree percentages. This indicates that the neural network is struggling to capture the variance in the data, leading to poor predictions across various regions. While some points are close to the ideal line showing decent predictions, there is a wide scatter of points, particularly in areas where the tree percentage is abow 20%. This spread indicates that the neural network is not accurately capturing the relationship between the predictors and tree percentage, leading to suboptimal results.](Images/nnet.png)
+
+#### XGBoost Regression Model
+
+XGBoost is an advanced ensemble learning technique that efficiently handles non-linearities and complex interactions in the data. This model uses similar decision tree approach as Random Forest Regression, with the difference, that XGBoost develops one tree at a time, correcting faults caused by previously trained trees, where as Random Forest generates each tree independently and aggregates results at the end. The gradient decent algorithm is used to minimize the loss when adding new trees.
+
+```{r eval=FALSE, include=TRUE}
+data_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage 
+                            + rangeland_percentage + water_percentage 
+                            + flooded_vegetation_percentage + bare_ground_percentage 
+                            + snow_ice_percentage + burned_area 
+                            + CO2_total + PM25_total + TPC_total 
+                            + NMHC_total + OC_total + CH4_total + SO2_total + BC_total,
+                            data = time_series_data)
+
+xgb_model <- xgboost(data = data_matrix, label = time_series_data$tree_percentage, 
+                     nrounds = 100, objective = "reg:squarederror")
+
+time_series_data$predicted_xgboost <- predict(xgb_model, data_matrix)
+```
+
+![**Actual vs. Predicted Tree Percentages from XGBoost.** XGBoost shows an almost perfect alignment between the predicted and actual tree percentages, as the points tightly follow the ideal line, which represents the ideal $x=y$ relationship. Model appears to have effectively captured underlying relationships between the tree percentage and predictor variables and there is very little deviation between actual and predicted values.](Images/boost.png)
+
+### Model Comparison
+
+We will now compare the four models once again to ensure that XGBoost is indeed the best fitting model. To do this, we can use the R-squared metric, also known as the coefficient of determination, which measures how well the model's predictions align with the actual data. The R-squared value ranges from 0 to 1, where 1 indicates that the model explains all the variability in the response variable, while 0 means that the model fails to explain any of the variability. This comparison will provide a clearer understanding of each model's performance.
+
+```{r eval=FALSE, include=TRUE}
+rsquared <- function(actual, predicted) {
+  cor(actual, predicted) ^ 2
+}
+
+# R² for linear model
+rsquared_lm <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_lm)
+
+# R² for nnet model
+rsquared_nnet <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_nnet)
+
+# R² for Random Forest model
+rsquared_rf <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_rf)
+
+# R² for XGBoost model
+rsquared_xgb <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_xgboost)
+```
+
+![R-squared Results.](Images/Screenshot from 2024-10-05 00-32-10.png)
+
+The results show that XGBoost is the best-performing model compared to the others tested, as demonstrated by its R-squared value of nearly 1, indicating a near-perfect fit. This suggests that XGBoost is able to capture almost all the variability in the tree percentage, making it the most reliable for predictions in our dataset. Random Forest model also indicates high R-squared metric but as we have seen from its predictions, XGBoost stil outperforms it.
+
+### Importance of Predictor Variables
+
+With XGBoost performing so well, it becomes important to understand which features contribute most to ist predictions. The next step is to analyze the feature importance, which helps us identify which variables have the greatest influence on tree percentage.
+
+![Importance of Predictor Variables for XGBoost Model.](Images/importance.png)
+
+The importance plot reveals that *`crops_percentage`* and *`built_area_percentage`* are the most significant drivers influencing tree coverage, followed by *`water_percentage`* and *`rangeland_percentage`*. This makes sense because crops and built areas are the primary competitors for land use, often located in geographically adjacent areas. Interestingly, gas emission variables have almost no effect on tree percentage. While the plot suggests their impact is negligible, closer inspection of the data frame shows that these values are not exactly zero, but very close to it. This could be due to the fact that emission measurements were taken during years with wildfires and are not consistently present in the data. As a result, their overall influence is lower compared to other variables that exhibit consistent and permanent changes contributing to tree cover fluctuations, whether positive or negative.
+
+### Simulating the Impact of Land-Use and Pollution Reductions on Tree Coverage
+
+In this section, we aim to simulate how changes in key predictor variables could affect tree percentage across different regions. The goal is to understand how adjustments in land use and pollution levels could potentially lead to optimized tree coverage. This type of simulation helps provide actionable insights into land management and environmental policy-making by showing the direct impact of reducing urban sprawl, agricultural expansion, or pollution levels on tree cover.
+
+To achieve this, we define a simulation function that applies percentage-based reductions to key variables such as *`built_area_percentage`*, *`crops_percentage`*, and *`CO2_total`* (as a representative of pollution, since other gas emissions showed importance for the model very near zero). For example, reducing built areas by 10%, crops by 10%, and pollution by 20% helps us explore how these changes can optimize tree coverage. Although `water_percentage` and `rangeland_percentage` play crucial roles in predicting tree percentage, it wouldn't be realistic to simulate changes to these values. Increasing water percentage, which supports tree growth, or decreasing rangeland percentage, which primarily reduces tree cover, would involve altering natural land cover types. Reducing rangeland would result in the destruction of natural habitats, and it is not feasible for land-use management to artificially increase water percentage without negatively impacting other environmental factors. Water must reach the land through natural processes.
+
+```{r eval=FALSE, include=TRUE}
+simulate_tree_percentage <- function(data, model,
+                                     built_area_change, crops_change,
+                                     pollution_reduction) {
+  
+  simulated_data <- data
+  simulated_data$built_area_percentage <- simulated_data$built_area_percentage * 
+                                          (1 - built_area_change)
+  simulated_data$crops_percentage <- simulated_data$crops_percentage * (1 - crops_change)
+  simulated_data$CO2_total <- simulated_data$CO2_total * (1 - pollution_reduction)
+  
+  simulated_data_matrix <- model.matrix(tree_percentage ~ built_area_percentage 
+                                        + crops_percentage + rangeland_percentage 
+                                        + water_percentage + flooded_vegetation_percentage 
+                                        + bare_ground_percentage + snow_ice_percentage 
+                                        + burned_area + CO2_total + PM25_total 
+                                        + TPC_total + NMHC_total + OC_total 
+                                        + CH4_total + SO2_total + BC_total,
+                                        data = simulated_data)
+  
+  simulated_data$predicted_tree_percentage <- predict(model, simulated_data_matrix)
+  
+  return(simulated_data)
+}
+
+# Reduce built area by 10%, crops by 10%, and pollution by 20%
+simulated_scenario <- simulate_tree_percentage(time_series_data, xgb_model,
+                                               built_area_change = 0.10, 
+                                               crops_change = 0.10, 
+                                               pollution_reduction = 0.20)
+```
+
+![Simulated Optimized Tree Percentage vs Predicted Tree Percentage.](Images/Rplot11.png)
+
+As we can see from the comparison of predicted and simulated optimized tree percentages, reduction of built areas, crops and CO2 pollution would result in the most observations having higher tree percentage. Since our data is currently in long format, where each observation stands for a single Central European region for a given year, we will summarize the results for each region to take a closer look at winnings we observed for each region over the period of six years from 2018 to 2023.
+
+We created a comparison dataset that calculates both the **predicted tree percentage** from the XGBoost model and the **simulated tree percentage** after applying land-use policy changes. The difference between the two values allows us to identify whether regions experienced improvements or declines in tree coverage based on the simulation. To better understand the effect of these simulated changes at the **regional level**, we computed the average predicted and simulated tree percentages for each region across the six years. This aggregation helped to see broader trends in tree coverage changes, ensuring that the analysis wasn't overly granular.
+
+```{r eval=FALSE, include=TRUE}
+regional_comparison <- comparison %>%
+  group_by(shapeName) %>%
+  summarise(
+    avg_predicted_tree_percentage = mean(predicted_xgboost, na.rm = TRUE),
+    avg_simulated_tree_percentage = mean(simulated_tree_percentage, na.rm = TRUE)
+  ) %>%
+  mutate(difference = avg_simulated_tree_percentage - avg_predicted_tree_percentage)
+
+summary_by_region <- regional_comparison %>%
+  summarise(
+    total_improved = sum(difference > 0),
+    total_declined = sum(difference < 0),
+    avg_improvement = mean(difference[difference > 0], na.rm = TRUE),
+    avg_decline = mean(difference[difference < 0], na.rm = TRUE)
+  )
+```
+
+![Predictor Optimization Results by Region.](Images/Screenshot from 2024-10-05 16-35-17.png)
+
+As seen from the output, **91 regions** experienced improvements in tree percentage after the simulated changes in predictor variables. The **average yearly improvement** in regions where tree percentage increase was simulated was 3.06%. On the other hand **19 regions** experienced slight decline in tree cover percentage where yearly decline was -0.767%.
+
+![**Simulated vs Predicted Tree Percentage by Region.** Almost all regions in our dataset fall in the upper part of the scatterplot, indicating tree cover growth. However, there are a few regions where the average simulated tree growth remained unchanged, and some regions where the simulated tree growth, with adjusted predictor variables, was lower than expected. It\'s important to note that in some regions, tree percentage correlates positively with crops and built area percentages. This means that a reduction in these two variables can lead to a reduction in tree percentage. This typically occurs in regions where built area and crops are geographically disjoint from tree cover, separated by other types of land use.](Images/Rplot12.png)
+
+In conclusion, land use management will need to carefully consider whether an average yearly tree cover growth of 3% is a desirable goal, or if the trade-off is too steep given the reduction in crops and settlement areas needed to achieve it. While increasing tree cover can be beneficial for the environment, it comes at the cost of important land use for citizens, agriculture, and infrastructure. However, with the implementation of the simulation function, there is flexibility to experiment with different scenarios and values. This allows for informed decision-making on how to best balance tree cover growth with other land use priorities.
 
 # Spatio-temporal Clustering
 
