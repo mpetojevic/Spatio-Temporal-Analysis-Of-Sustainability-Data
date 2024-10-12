@@ -1,15 +1,18 @@
 ---
 title: "Spatio Temporal Analysis Of Sustainability Data in Central Europe"
-author: 'Marijana Petojevic'
+author: "Marijana Petojevic"
 date: "26.09.2024"
 output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  pdf_document:
+    toc: yes
+    toc_depth: 4
   html_document:
     toc: yes
     toc_depth: '4'
     df_print: paged
-  pdf_document:
-    toc: yes
-    toc_depth: 4
 subtitle: Bachelor Thesis in Computational Statistics
 ---
 
@@ -354,7 +357,7 @@ The plot highlights several periods of significant tree loss, notably around 201
 
 This cumulative tree loss can be further explored by examining the spatial distribution of changes in tree cover, as shown in subsequent sections. Moreover, the Shiny App allows users to break down these losses by region and correlate them with other factors like built area expansion, crop percentage changes, rangeland percentage and gas emissions.
 
-![Tree cover Loss in Central European Countries](Images/Screenshot%20from%202024-10-04%2015-07-23.png)
+![Tree cover Loss in Central European Countries Over the course of 2001 to 2023](Images/coverloss.png)
 
 Tree cover loss is significant across all Central European countries, but the factors driving these changes and the influence of other environmental variables remain unclear. To better understand what affects tree cover change in the Central European region, we will conduct a descriptive statistical analysis and aim to identify evident patterns in tree cover change.
 
@@ -487,7 +490,7 @@ for (year_col in year_columns) {
 
 Next, we extract Moran's I statistic and corresponding p-values for each year to visualize the results and determine whether the null hypothesis ($H_0$) of no spatial autocorrelation can be rejected:
 
-![Moran's I Statistics and p-Values for tree percentage variables from 2018 to 2023](Images/Rplot01.png)
+![Moran's I Statistics and p-Values for tree percentage variables from 2018 to 2023](Images/Rplot16.png)
 
 As seen in the computed values, the p-values for each year are below the 0.05 significance level, allowing us to reject the null hypothesis. This indicates strong evidence of positive spatial autocorrelation in the `tree_percentage` variable across all years from 2018 to 2023.
 
@@ -761,7 +764,7 @@ correlation_results <- time_series_data %>%
   summarise(correlation = cor(tree_percentage, lag_tree_percentage, use = "complete.obs"))
 ```
 
-![Scatter plot showing the relationship between tree percentage and its lagged tree percentage for each region. Each point represents a region's tree percentage in one year versus its percentage in the previous year. The color represents different regions, and the trend lines show the linear relationship for each region.](Images/tmpautocorr.png)
+![Scatter plot showing the relationship between tree percentage and its lagged tree percentage for each region. Each point represents a region's tree percentage in one year versus its percentage in the previous year. The color represents different regions, and the trend lines show the linear relationship for each region.](Images/tmpautocorr.png){width="523"}
 
 As we can see on the plot, there is a clear **positive linear relationship** between tree percentage and the lagged tree percentage. This suggests that if a region had a high tree percentage in one year, it likely had a similarly high percentage in the previous year (and vice versa for low tree percentages). The points follow a nearly perfect diagonal line, indicating that the tree percentage in any given year is highly correlated with the tree percentage in the previous year. This means that regions tend to have **consistent tree cover over time**. The small deviations from the diagonal line indicate slight year-to-year fluctuations in tree percentages. However, these fluctuations appear to be minor, reinforcing the idea that tree cover tends to be stable over time for most regions. There are a few regions where the points are slightly farther from the diagonal line, indicating that these regions experienced more significant changes in tree percentage between consecutive years.
 
