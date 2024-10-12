@@ -595,7 +595,7 @@ We will visualize results for each year using [`tmap`](https://cran.r-project.or
 
 ![](Images/local_moran_2023.png)
 
-As the `tree_percentage` variable shows, there are slight changes in the tree percentage for each area over the years. Similarly, the Moran's I statistics calculated for each year also reflect these differences. The plots for each year illustrate areas with positive spatial autocorrelation, with some neighboring states joining a cluster of positive spatial autocorrelation one year and then no longer being part of that group the next year.
+As the `tree_percentage` variable shows, there are slight changes in the tree percentage for each area over the years. Similarly, the Moran's I statistics calculated for each year also reflect these differences. The plots for each year illustrate areas with positive spatial autocorrelation (states in which $p-Value$ is less than $0.05$).
 
 In Hungary, states with positive spatial autocorrelation consistently show very low tree percentages (between 2% and 10%). This makes sense, as this region is largely covered by fertile arable land (as indicated by the crops in our dataset). The significance value is below $0.05$ for southern Austrian states and the entirety of Slovenia, where tree percentages remain high compared to neighboring areas. The Slovenian states of Zahodna and Vzhodna, with tree percentages rising between 55% and 65%, contrast with Austrian states, where tree percentages are between 40% and 55%. A few Slovakian states, such as Zilina and Banska Bystrica, exhibit similar patterns to Austria and Slovenia, with high tree coverage (\~55%) throughout the observed years. The observed positive spatial autocorrelation in these groups makes sence, as these regions in Austria, Slovenia, and Slovakia are mountainous and naturally have higher tree percentages.
 
@@ -627,7 +627,7 @@ calculate_local_morans_i_for_year_two_sided <- function(data,
 
 ![Areas with negative, no and positive spatial autocorrelation conducted from two-sided Local Moran's I Statistic](Images/local_autocorrelation.png)
 
-The groups with positive spatial autocorrelation under the `"two-sided"` alternative hypothesis revealed the same patterns as those obtained from the one-sided `"greater"` alternative hypothesis. From 2019 to 2022 (excluding 2021), negative spatial autocorrelation was observed in the state of Borsod-Abaúj-Zemplén in Hungary. Negative spatial autocorrelation means that surrounding areas have dissimilar values. This state is bordered on one side by Slovakian states with high tree coverage and on the other side by Hungarian states with the lowest tree percentage values in the dataset.
+The groups with positive spatial autocorrelation under the `"two-sided"` alternative hypothesis revealed the same patterns as those obtained from the one-sided `"greater"` alternative hypothesis with the difference of some neighboring states joining a cluster of positive spatial autocorrelation one year and then no longer being part of that group the next year. Such behaviour was observed in Steiermark Austria, which was spatialy positively correlated in 2020 and 2023, but not in other years. From 2019 to 2022 (excluding 2021), negative spatial autocorrelation was observed in the state of Borsod-Abaúj-Zemplén in Hungary. Negative spatial autocorrelation means that surrounding areas have dissimilar values. This state is bordered on one side by Slovakian states with high tree coverage and on the other side by Hungarian states with the lowest tree percentage values in the dataset.
 
 **Moran's I Clusters**
 
@@ -640,7 +640,7 @@ mp <- moran.plot(as.vector(scale(data_with_state_boarders$tree_percentage_2018))
 head(mp)
 ```
 
-![Moran's I Scatterplot showing the scaled values against spatially lagged values for tree percentage in 2018](Images/Rplot05.png)
+![Moran's I Scatterplot showing the scaled values against spatially lagged values for tree percentage in 2018. States which represent outliers are marked in blue.](Images/Rplot17.png)
 
 ![](Images/Screenshot%20from%202024-10-03%2011-34-01.png)
 
@@ -676,11 +676,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                            |                                                            |
+|                                                           |                                                           |
 |------------------------------------|------------------------------------|
-| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
+| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
