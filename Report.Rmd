@@ -676,11 +676,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                           |                                                           |
+|                                                            |                                                            |
 |------------------------------------|------------------------------------|
-| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -766,6 +766,8 @@ correlation_results <- time_series_data %>%
 
 ![Scatter plot showing the relationship between tree percentage and its lagged tree percentage for each region. Each point represents a region's tree percentage in one year versus its percentage in the previous year. The color represents different regions, and the trend lines show the linear relationship for each region.](Images/tmpautocorr.png){width="523"}
 
+**Important note:** Before we dive into intepreting autocorrelation plot from above, it's important to acknowledge that the correlation is calculated based on only six values per region (tree percentage values from 2018 to 2023), which means the sample size is relatively small. As such, any conclusions drawn from this analysis must be interpreted with caution. The observed correlations may not be statistically robust due to the limited data points, and performing traditional statistical tests (e.g., significance testing) may not yield meaningful results. Permutation tests, which are often used to assess the significance of correlations, would also be inappropriate here due to the time-series structure of the data, as the observations are not exchangeable across time.
+
 As we can see on the plot, there is a clear **positive linear relationship** between tree percentage and the lagged tree percentage. This suggests that if a region had a high tree percentage in one year, it likely had a similarly high percentage in the previous year (and vice versa for low tree percentages). The points follow a nearly perfect diagonal line, indicating that the tree percentage in any given year is highly correlated with the tree percentage in the previous year. This means that regions tend to have **consistent tree cover over time**. The small deviations from the diagonal line indicate slight year-to-year fluctuations in tree percentages. However, these fluctuations appear to be minor, reinforcing the idea that tree cover tends to be stable over time for most regions. There are a few regions where the points are slightly farther from the diagonal line, indicating that these regions experienced more significant changes in tree percentage between consecutive years.
 
 To further investigate the trend of this strong linear relationship, we will closely examine each region to determine whether they exhibit a positive or negative correlation.
@@ -799,6 +801,8 @@ Positive correlation alone doesn't reveal whether changes in `tree_percentage` a
 -   **Positive Slope**: Tree growth, indicating an increase in tree coverage.
 
 -   **Negative Slope**: Tree loss, showing a decrease in tree coverage.
+
+**Note:** As already noted for temporal autocorrelation, following results are to be taken with caution, due to uncertainty arising with small sample size.
 
 ```{r eval=FALSE, include=TRUE}
 positive_corr <- correlation_results %>%
@@ -1263,7 +1267,7 @@ The goal of this comparison is to determine the extent to which tree coverage tr
 
 -   **Tree Percentage Only**: he regions tend to cluster into larger, contiguous areas. This continuity suggests that neighboring regions with similar tree coverage changes tend to be grouped together. Spatial distribution of regions also contributes to the clustering results attempting to group geographically close regions with similar trends together.
 
-![](Images/alpha05trend.png)
+![Tree Percentage Trends by each cluster when clustering only based on **only** tree percentage variable with $\alpha = 0.5$.](Images/alpha05trend.png)
 
 -   **Multiple Variables**: The clusters become more **fragmented** and **localized**. This fragmentation likely reflects the more complex land-use dynamics in these regions. Regions where built-up areas and agricultural activities are significant now influence cluster membership, showing that the competition for land use plays a larger role than just changes in tree cover. Interestingly, a smaller cluster emerges in Switzerland, grouping a few regions together, which presents an unusual and unexpected pattern in the analysis and needs further inspection to why this assignment would make sense.
 
