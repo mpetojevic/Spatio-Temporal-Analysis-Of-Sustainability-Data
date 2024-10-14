@@ -676,11 +676,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                            |                                                            |
+|                                                           |                                                           |
 |------------------------------------|------------------------------------|
-| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
+| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -782,7 +782,7 @@ The regions with blue bars represent a **positive correlation** between tree per
 | ![](Images/Screenshot%20from%202024-10-03%2022-45-05.png) | ![](Images/Screenshot%20from%202024-10-03%2022-45-16.png) |
 | ![](Images/Screenshot%20from%202024-10-03%2022-45-28.png) |                                                           |
 
-![](Images/Rplot02.png)
+![](Images/thuringen_plot.png)
 
 On the other hand, the red bars represent regions with a **negative correlation**, indicating that the tree percentage has been experiencing inconsistent changes over time, whether it was a tree growth or tree loss. Region of Gyor in Hungary has shown such strong behaviour in experiencing such different patterns over the years as shown in plots below:
 
@@ -792,7 +792,7 @@ On the other hand, the red bars represent regions with a **negative correlation*
 | ![](Images/Screenshot%20from%202024-10-03%2022-42-04.png) | ![](Images/Screenshot%20from%202024-10-03%2022-42-19.png) |
 | ![](Images/Screenshot%20from%202024-10-03%2022-42-33.png) |                                                           |
 
-![](Images/Rplot03.png)
+![](Images/gyor_plot.png)
 
 Most regions fall within the correlation range of **-0.5 to 0.5**, suggesting that, for these regions, changes in tree percentage from year to year are not as pronounced. This indicates that tree cover remains relatively stable over time for many areas. This stability is further supported by the earlier scatterplot, where tree percentages showed a strong linear relationship with their lagged values, confirming that significant fluctuations are not common across the dataset, although they can happen, but when that is the case they are not so rigorous.
 
