@@ -357,7 +357,7 @@ The plot highlights several periods of significant tree loss, notably around 201
 
 This cumulative tree loss can be further explored by examining the spatial distribution of changes in tree cover, as shown in subsequent sections. Moreover, the Shiny App allows users to break down these losses by region and correlate them with other factors like built area expansion, crop percentage changes, rangeland percentage and gas emissions.
 
-![Tree cover Loss in Central European Countries Over the course of 2001 to 2023](Images/coverloss.png)
+![Clumulative Tree Cover Loss in Central European Countries Over the course of 2001 to 2023](Images/treelosmapp.png)
 
 Tree cover loss is significant across all Central European countries, but the factors driving these changes and the influence of other environmental variables remain unclear. To better understand what affects tree cover change in the Central European region, we will conduct a descriptive statistical analysis and aim to identify evident patterns in tree cover change.
 
@@ -583,17 +583,17 @@ for (year_col in year_columns) {
 
 We will visualize results for each year using [`tmap`](https://cran.r-project.org/web/packages/tmap/tmap.pdf) package. Areas in which p-value is less than the significance level $0.05$ (in other words areas where z-scores are higher than `qnorm(0.95) = 1.65`) are the ones for which we reject null hypothesis $H_0$ and conclude they present positive spatial autocorrelation. We will visualize Tree percentage of each year and Local Moran's I statistic as well, to also observe how these changed over time.
 
-![](Images/local_moran_2018.png)
+![](Images/lmi2018.png)
 
-![](Images/local_moran_2019.png)
+![](Images/lmi2019.png)
 
-![](Images/local_moran_2020.png)
+![](Images/lmi2020.png)
 
-![](Images/local_moran_2021.png)
+![](Images/lmi2021.png)
 
-![](Images/local_moran_2022.png)
+![](Images/lmi2022.png)
 
-![](Images/local_moran_2023.png)
+![](Images/lmi2023.png)
 
 As the `tree_percentage` variable shows, there are slight changes in the tree percentage for each area over the years. Similarly, the Moran's I statistics calculated for each year also reflect these differences. The plots for each year illustrate areas with positive spatial autocorrelation (states in which $p-Value$ is less than $0.05$).
 
@@ -640,7 +640,7 @@ mp <- moran.plot(as.vector(scale(data_with_state_boarders$tree_percentage_2018))
 head(mp)
 ```
 
-![Moran's I Scatterplot showing the scaled values against spatially lagged values for tree percentage in 2018. States which represent outliers are marked in blue.](Images/Rplot17.png)
+![Moran's I Scatterplot showing the scaled values against spatially lagged values for tree percentage in 2018. States which represent outliers are marked in blue.](Images/Rplot18.png)
 
 ![](Images/Screenshot%20from%202024-10-03%2011-34-01.png)
 
@@ -853,9 +853,9 @@ correlation_results <- time_series_data %>%
 
 ### Accessing Correlation
 
-|                             |                                  |                              |
+|                                          |                                  |                                           |
 |-----------------------|--------------------------|-----------------------|
-| ![](Images/treecropcor.png) | ![](Images/treerangelandcor.png) | ![](Images/treebuiltcor.png) |
+| ![](Images/treecropcor.png){width="218"} | ![](Images/treerangelandcor.png) | ![](Images/treebuiltcor.png){width="227"} |
 
 : Correlation of Tree Percentage and Crops percentage, Rangeland Percentage and Built Area Percentage.
 
@@ -939,28 +939,35 @@ In areas where agricultural expansion is necessary, such as in Somogy and suburb
 
 ## Model Fitting
 
-We aim to model and predict tree percentage based on multiple land-use and pollution-related variables. Understanding how different variables such as built area percentage, crops percentage, rangeland percentage, and pollution levels influence tree coverage is essential to guide environmental policies and land-use decisions. The primary goal is to fit a model that can accurately predict tree percentage using these variables.
+We aim to model and predict tree percentage based on multiple land-use and pollution-related variables. Understanding how different variables such as built area percentage, crops percentage, rangeland percentage, and pollution levels influence tree coverage is essential to guide environmental policies and land-use decisions. **It is important to note that this model is explanatory rather than predictive. This means that all variables are observed at the same point in time, and the primary goal of the analysis is to explain the relationships between the variables rather than to forecast future values.** While this is a valid approach for exploring relationships, it does not imply that the model is capable of predicting future tree coverage based on past observations of land-use variables.
 
-### Model Fitting Approaches
+### Model Fitting Approaches & Train-Test Split & Performance Evaluation
 
-We began by fitting several models to predict tree percentage, each of which was evaluated for performance:
+We began by fitting several models to predict tree percentage, each of which was evaluated for performance. Performance is evaluated by splitting the data into training and test sets. The training data consists of observations from 2018 to 2022, while the test data includes observations from the year 2023. This allows us to check how well the model fits unseen data, offering a measure of its robustness.
+
+```{r eval=FALSE, include=TRUE}
+train_data <- time_series_data %>% filter(year < 2023)
+test_data <- time_series_data %>% filter(year == 2023)
+```
 
 #### Linear Regression Model
 
 First we tried to fit a simple linear model where tree percentage is assumed to have a linear relationship with land-use and pollution-related variables.
 
 ```{r eval=FALSE, include=TRUE}
-model <- lm(tree_percentage ~ built_area_percentage + crops_percentage 
-            + rangeland_percentage + water_percentage
-            + flooded_vegetation_percentage + bare_ground_percentage 
-            + snow_ice_percentage + burned_area
-            + CO2_total + PM25_total + TPC_total + NMHC_total 
-            + OC_total + CH4_total + SO2_total
-            + BC_total, data = time_series_data)
-time_series_data$predicted_lm <- predict(model)
+lm_model <- lm(tree_percentage ~ built_area_percentage + crops_percentage 
+               + rangeland_percentage + water_percentage
+               + flooded_vegetation_percentage + bare_ground_percentage 
+               + snow_ice_percentage + burned_area
+               + CO2_total + PM25_total + TPC_total + NMHC_total 
+               + OC_total + CH4_total + SO2_total + BC_total,
+               data = train_data)
+
+# Make predictions on the test data (2023)
+test_data$predicted_lm <- predict(lm_model, newdata = test_data)
 ```
 
-![**Predicted vs. Actual Tree Percentage from Linear regression Model.** The linear regression model provided an initial understanding but showed not the best fit and high residuals, meaning the predictions were often far off from the actual values and grouped in clusters that overestimated or underestimated the actual tree percentage values. As observed in the previous section, where we analyzed the correlation between tree percentage and various other feature variables, tree percentage did not show positive correlations with most variables across regions. Negative correlations were predominant, and the values rarely followed a linear pattern, which explains why a linear model is not best-suited to our dataset.](Images/lm.png)
+![**Predicted vs. Actual Tree Percentage from Linear regression Model.** The linear regression model provided an initial understanding but showed not the best fit and high residuals, meaning the predictions were often far off from the actual values and grouped in clusters that overestimated or underestimated the actual tree percentage values. As observed in the previous section, where we analyzed the correlation between tree percentage and various other feature variables, tree percentage did not show positive correlations with most variables across regions. Negative correlations were predominant, and the values rarely followed a linear pattern, which explains why a linear model is not best-suited to our dataset.](Images/lmtesttrain.png)
 
 #### Random Forest Regression
 
@@ -973,11 +980,12 @@ model_rf <- randomForest(tree_percentage ~ built_area_percentage + crops_percent
                          + snow_ice_percentage + burned_area
                          + CO2_total + PM25_total + TPC_total 
                          + NMHC_total + OC_total + CH4_total + SO2_total
-                         + BC_total, data = time_series_data)
-time_series_data$predicted_rf <- predict(model_rf)
+                         + BC_total, data = train_data, ntree = 500) 
+
+test_data$predicted_rf <- predict(model_rf, newdata = test_data)
 ```
 
-![**Predicted vs. Actual Tree Percentage from Random Forest Regression Model.** As many points closely follow the ideal line, it is suggested that Random Forest model generally performs well in predicting tree percentage. However, there are deviations, especially at higher and lower tree percentages, indicating that the model may have some difficulty accurately predicting very high or very high or very low tree percentage values. While the model seems to capture the overall trend, further tuning or more complex models might improve performance, especially in these extreme cases.](Images/Rplot10.png)
+![**Predicted vs. Actual Tree Percentage from Random Forest Regression Model.** As many points closely follow the ideal line, it is suggested that Random Forest model generally performs well in predicting tree percentage. However, there are deviations, especially at higher and lower tree percentages, indicating that the model may have some difficulty accurately predicting very high or very high or very low tree percentage values. While the model seems to capture the overall trend, further tuning or more complex models might improve performance, especially in these extreme cases.](Images/rftraintest.png)
 
 There are two main clusters of points below and under the ideal (red) line. The one for tree percentages being between 0% and 10% tree percentage, where the model for these low values overestimated the actual tree percentage. The other one is grouping high tree percentage values (between 45 and 60% tree percentage) over the ideal line, meaning that the model has underestimated those values and predicted lower tree percentage than it actually should be the case.
 
@@ -986,42 +994,53 @@ There are two main clusters of points below and under the ideal (red) line. The 
 Neural networks are a class of machine learning models inspired by the structure and function of the human brain, making them highly effective at capturing complex, non-linear relationships in data. Given the diverse and multi-dimensional nature of my dataset, which includes variables like built area percentage, crops percentage, and pollution levels, a neural network was a promising candidate for predicting tree percentage. By employing multiple hidden layers and non-linear transformations, the model has the potential to uncover intricate interactions between these variables that traditional linear models might overlook.
 
 ```{r eval=FALSE, include=TRUE}
-
 nn_model <- nnet(tree_percentage ~ built_area_percentage + crops_percentage 
-                 + rangeland_percentage + water_percentage 
-                 + flooded_vegetation_percentage + bare_ground_percentage 
-                 + snow_ice_percentage + burned_area 
-                 + CO2_total + PM25_total + TPC_total + NMHC_total 
+                 + rangeland_percentage + water_percentage +
+                   flooded_vegetation_percentage + bare_ground_percentage 
+                 + snow_ice_percentage + burned_area +
+                   CO2_total + PM25_total + TPC_total + NMHC_total 
                  + OC_total + CH4_total + SO2_total + BC_total,
-                 data = time_series_data, size = 10, linout = TRUE)
+                 data = train_data, size = 10, linout = TRUE, maxit = 500)
 
-time_series_data$predicted_nnet <- predict(nn_model, time_series_data)
+# Make predictions on the test data (2023)
+test_data$predicted_nnet <- predict(nn_model, test_data)
 ```
 
 Although neural networks are powerful, they can also be prone to overfitting, especially in cases where the data may not be sufficient or complex enough to warrant such a sophisticated approach. The neural network, though capable of handling the multi-dimensional nature of the data, struggled with accurate predictions, as reflected in the scatterplot comparing actual and predicted values.
 
-![**Actual vs. Predicted Tree Percentage From Neural Network Model.** There is a noticeable vertical clustering of points, which suggests that the model is assigning similar predicted values regardless of the actual variation in tree percentages. This indicates that the neural network is struggling to capture the variance in the data, leading to poor predictions across various regions. While some points are close to the ideal line showing decent predictions, there is a wide scatter of points, particularly in areas where the tree percentage is abow 20%. This spread indicates that the neural network is not accurately capturing the relationship between the predictors and tree percentage, leading to suboptimal results.](Images/nnet.png)
+![**Actual vs. Predicted Tree Percentage From Neural Network Model.** There is a noticeable vertical clustering of points, which suggests that the model is assigning similar predicted values regardless of the actual variation in tree percentages. This indicates that the neural network is struggling to capture the variance in the data, leading to poor predictions across various regions. While some points are close to the ideal line showing decent predictions, there is a wide scatter of points, particularly in areas where the tree percentage is abow 20%. This spread indicates that the neural network is not accurately capturing the relationship between the predictors and tree percentage, leading to suboptimal results.](Images/nnettesttrain.png)
 
 #### XGBoost Regression Model
 
 XGBoost is an advanced ensemble learning technique that efficiently handles non-linearities and complex interactions in the data. This model uses similar decision tree approach as Random Forest Regression, with the difference, that XGBoost develops one tree at a time, correcting faults caused by previously trained trees, where as Random Forest generates each tree independently and aggregates results at the end. The gradient decent algorithm is used to minimize the loss when adding new trees.
 
 ```{r eval=FALSE, include=TRUE}
-data_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage 
+train_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage 
+                             + rangeland_percentage + water_percentage 
+                             + flooded_vegetation_percentage + bare_ground_percentage 
+                             + snow_ice_percentage + burned_area 
+                             + CO2_total + PM25_total + TPC_total 
+                             + NMHC_total + OC_total + CH4_total 
+                             + SO2_total + BC_total,
+                             data = train_data)
+
+test_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage 
                             + rangeland_percentage + water_percentage 
                             + flooded_vegetation_percentage + bare_ground_percentage 
                             + snow_ice_percentage + burned_area 
-                            + CO2_total + PM25_total + TPC_total 
-                            + NMHC_total + OC_total + CH4_total + SO2_total + BC_total,
-                            data = time_series_data)
+                            + CO2_total + PM25_total + TPC_total + NMHC_total 
+                            + OC_total + CH4_total + SO2_total + BC_total,
+                            data = test_data)
 
-xgb_model <- xgboost(data = data_matrix, label = time_series_data$tree_percentage, 
+# Train the model on the training data (2018-2022)
+xgb_model <- xgboost(data = train_matrix, label = train_data$tree_percentage, 
                      nrounds = 100, objective = "reg:squarederror")
 
-time_series_data$predicted_xgboost <- predict(xgb_model, data_matrix)
+# Predict on the test data (2023)
+test_data$predicted_xgboost <- predict(xgb_model, test_matrix)
 ```
 
-![**Actual vs. Predicted Tree Percentages from XGBoost.** XGBoost shows an almost perfect alignment between the predicted and actual tree percentages, as the points tightly follow the ideal line, which represents the ideal $x=y$ relationship. Model appears to have effectively captured underlying relationships between the tree percentage and predictor variables and there is very little deviation between actual and predicted values.](Images/boost.png)
+![**Actual vs. Predicted Tree Percentages from XGBoost.** XGBoost shows very well fitted alignment between the predicted and actual tree percentages, as the points tightly follow the ideal line, which represents the ideal $x=y$ relationship. The distances of points to the ideal line are minimal and there don't seem to be any huge deviations from the line, or points with higher or lower tree percentage heavly clustered together further from the ideal line. Model appears to have effectively captured underlying relationships between the tree percentage and predictor variables and there is very little deviation between actual and predicted values.](Images/testData2023xgboost.png)
 
 ### Model Comparison
 
@@ -1032,22 +1051,22 @@ rsquared <- function(actual, predicted) {
   cor(actual, predicted) ^ 2
 }
 
-# R² for linear model
-rsquared_lm <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_lm)
+# R² for linear model on test data
+rsquared_lm <- rsquared(test_data$tree_percentage, test_data$predicted_lm)
 
-# R² for nnet model
-rsquared_nnet <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_nnet)
+# R² for nnet model on test data
+rsquared_nnet <- rsquared(test_data$tree_percentage, test_data$predicted_nnet[,1])
 
-# R² for Random Forest model
-rsquared_rf <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_rf)
+# R² for Random Forest model on test data
+rsquared_rf <- rsquared(test_data$tree_percentage, test_data$predicted_rf)
 
-# R² for XGBoost model
-rsquared_xgb <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_xgboost)
+# R² for XGBoost model on test data
+rsquared_xgb <- rsquared(test_data$tree_percentage, test_data$predicted_xgboost)
 ```
 
-![R-squared Results.](Images/Screenshot%20from%202024-10-05%2000-32-10.png)
+![R-squared Results.](Images/Screenshot from 2024-10-17 13-06-31.png)
 
-The results show that XGBoost is the best-performing model compared to the others tested, as demonstrated by its R-squared value of nearly 1, indicating a near-perfect fit. This suggests that XGBoost is able to capture almost all the variability in the tree percentage, making it the most reliable for predictions in our dataset. Random Forest model also indicates high R-squared metric but as we have seen from its predictions, XGBoost stil outperforms it.
+The results show that XGBoost is the best-performing model compared to the others tested, as demonstrated by its R-squared value of nearly 1, indicating a near-perfect fit. This suggests that XGBoost is able to capture almost all the variability in the tree percentage, making it the most reliable for predictions in our dataset. Random Forest model also indicates high R-squared metric but XGBoost stil indicates slightly higher R-squared value and better model fitting.
 
 ### Importance of Predictor Variables
 
