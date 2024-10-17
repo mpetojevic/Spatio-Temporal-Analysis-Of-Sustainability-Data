@@ -676,11 +676,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                           |                                                           |
+|                                                            |                                                            |
 |------------------------------------|------------------------------------|
-| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -941,6 +941,28 @@ In areas where agricultural expansion is necessary, such as in Somogy and suburb
 
 We aim to model and predict tree percentage based on multiple land-use and pollution-related variables. Understanding how different variables such as built area percentage, crops percentage, rangeland percentage, and pollution levels influence tree coverage is essential to guide environmental policies and land-use decisions. **It is important to note that this model is explanatory rather than predictive. This means that all variables are observed at the same point in time, and the primary goal of the analysis is to explain the relationships between the variables rather than to forecast future values.** While this is a valid approach for exploring relationships, it does not imply that the model is capable of predicting future tree coverage based on past observations of land-use variables.
 
+As a critical step before model fitting, we examine the correlation matrix to explore the relationships between the selected land-use and pollution-related variables. This helps us understand how these variables interact and their potential influence on **tree percentage**.
+
+Through earlier correlation analysis between **tree percentage** and several variables such as **built area percentage** and **crops percentage**, we gained some deep insights and have seen that tree percentage in the most of the Central European areas correlates heavily negative with these variables.
+
+```{r eval=FALSE, include=TRUE}
+corr_data <- time_series_data %>%
+  select(tree_percentage, built_area_percentage, crops_percentage, 
+         rangeland_percentage, water_percentage,
+         flooded_vegetation_percentage, bare_ground_percentage, 
+         snow_ice_percentage, burned_area, CO2_total,
+         PM25_total, TPC_total, NMHC_total, OC_total, 
+         CH4_total, SO2_total, BC_total)
+
+corr_matrix <- cor(corr_data, use = "complete.obs")
+
+corrplot(corr_matrix, method = "circle", type = "lower", tl.col = "black")
+```
+
+![Correlation Matrix of variables used for model fitting.](Images/Rplot20.png)
+
+Now, this broader correlation plot offers additional insights into the relationships between not only **tree percentage** and other variables, but also between the land-use and pollution metrics themselves. Pollution-related variables, including **BC_total**, **SO2_total**, and **CH4_total**, show strong correlations with each other, suggesting that these factors often co-occur due to shared sources of emissions. All of these pollution variables are also highly positively correlated with `burned_area` as those pollutants were measured in in years where wild fires have taken place in Central European regions.
+
 ### Model Fitting Approaches & Train-Test Split & Performance Evaluation
 
 We began by fitting several models to predict tree percentage, each of which was evaluated for performance. Performance is evaluated by splitting the data into training and test sets. The training data consists of observations from 2018 to 2022, while the test data includes observations from the year 2023. This allows us to check how well the model fits unseen data, offering a measure of its robustness.
@@ -1044,7 +1066,17 @@ test_data$predicted_xgboost <- predict(xgb_model, test_matrix)
 
 ### Model Comparison
 
-We will now compare the four models once again to ensure that XGBoost is indeed the best fitting model. To do this, we can use the R-squared metric, also known as the coefficient of determination, which measures how well the model's predictions align with the actual data. The R-squared value ranges from 0 to 1, where 1 indicates that the model explains all the variability in the response variable, while 0 means that the model fails to explain any of the variability. This comparison will provide a clearer understanding of each model's performance.
+#### R-Squared Metric
+
+We will now compare the four models once again to ensure that XGBoost is indeed the best fitting model. To do this, we can use the R-squared metric, also known as the coefficient of determination, which measures how well the model's predictions align with the actual data.
+
+$$
+R^2 = 1 - \frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{\sum_{i=1}^{n} (y_i - \bar{y})^2}
+$$
+
+Where $y_i$ are the **actual** observed values (tree percentage), $\hat{y}_i$ are the **predicted** values from the model, $\bar{y}$ is the **mean** of the actual values and $n$ is the number of observations.
+
+This formula essentially compares the total variance in the actual values to the variance in the residuals (errors), with $R^2$ representing the proportion of variance explained by the model. The $R²$ value ranges from 0 to 1, where 1 indicates that the model explains all the variability in the response variable, while 0 means that the model fails to explain any of the variability. This comparison will provide a clearer understanding of each model's performance.
 
 ```{r eval=FALSE, include=TRUE}
 rsquared <- function(actual, predicted) {
@@ -1064,9 +1096,32 @@ rsquared_rf <- rsquared(test_data$tree_percentage, test_data$predicted_rf)
 rsquared_xgb <- rsquared(test_data$tree_percentage, test_data$predicted_xgboost)
 ```
 
-![R-squared Results.](Images/Screenshot from 2024-10-17 13-06-31.png)
+![$R²$ Results.](Images/Screenshot%20from%202024-10-17%2013-06-31.png)
 
 The results show that XGBoost is the best-performing model compared to the others tested, as demonstrated by its R-squared value of nearly 1, indicating a near-perfect fit. This suggests that XGBoost is able to capture almost all the variability in the tree percentage, making it the most reliable for predictions in our dataset. Random Forest model also indicates high R-squared metric but XGBoost stil indicates slightly higher R-squared value and better model fitting.
+
+#### RMSE Metric
+
+On the other hand, we can also use $RMSE$ (Root Mean Squared Error), to compare models. $RMSE$ measures the average magnitude of the errors between predicted and actual values.
+
+$$
+RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}
+$$
+
+Where $y_i$ is the actual value, $\hat{y}_i$ is the predicted value and $n$ is the number of data points.
+
+**Low** $RMSE$ indicates that the predicted values are very close to the actual values, which means the model is performing well, where as **high** $RMSE$ suggests that there are significant errors in the model's predictions and that the model may not be capturing the underlying patterns in data well.
+
+```{r eval=FALSE, include=TRUE}
+rmse_lm <- sqrt(mean((test_data$tree_percentage - test_data$predicted_lm)^2))
+rmse_rf <- sqrt(mean((test_data$tree_percentage - test_data$predicted_rf)^2))
+rmse_nnet <- sqrt(mean((test_data$tree_percentage - test_data$predicted_nnet)^2))
+rmse <- sqrt(mean((test_data$tree_percentage - test_data$predicted_xgboost)^2))
+```
+
+![$RMSE$ Results.](Images/Screenshot from 2024-10-17 13-20-07.png){width="414"}
+
+XGBoost achieved the lowest $RMSE$ of 1.56 as well as the $R²$ closest to 1, indicating that it is really the best performing model in our case. The relatively low error suggests that XGBoost can accurately predict tree percentage based on the input features. Random Forest model also performed quite well considering its low $RMSE$ of 2.51 and $R²$ very close to 1. Linear Model had decent performance once again and Neural Network Model performed the worst out of all, which we previously observed.
 
 ### Importance of Predictor Variables
 
