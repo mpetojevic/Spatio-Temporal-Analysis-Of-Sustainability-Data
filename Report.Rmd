@@ -671,11 +671,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                           |                                                           |
+|                                                            |                                                            |
 |------------------------------------|------------------------------------|
-| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -1267,7 +1267,7 @@ $$
 
 $D_{temporal}$ is in our case distance matrix representing differences in tree percentage over time, but can be calculated for any combination of variables. In the further section, we are going to cluster data using this approach based on temporal data about tree cover and other predictor variables, but right now, we are going to focus on clustering based only on temporal data of tree percentage and its spatial distribution. $D_{spatial}$ is matrix of spatial distances between regions.
 
-The **gap statistic** was used to determine the optimal number of clusters for each value of $\alpha$ by comparing the within-cluster variance for a given number of clusters to that of a reference distribution, helping to find the number of clusters that best fits the data without overfitting. Finally function `pam` [@pamCite] from `cluster` [@clusterCite] package was employed to carry out the actual assignment of observations to clusters.
+The **gap statistic** was used to determine the optimal number of clusters for each value of $\alpha$ by comparing the within-cluster variance for a given number of clusters to that of a reference distribution, helping to find the number of clusters that best fits the data without overfitting. To determine gap statistic we used `clusGap` function[@clusgapCite] from `cluster` [@clusterCite] package. Finally function `pam` [@pamCite] from `cluster` [@clusterCite] package was employed to carry out the actual assignment of observations to clusters.
 
 ```{r eval=FALSE, include=TRUE}
 for (alpha in seq(0.1, 0.9, by = 0.1)) {
