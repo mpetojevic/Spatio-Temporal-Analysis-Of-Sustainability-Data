@@ -576,19 +576,19 @@ for (year_col in year_columns) {
 }
 ```
 
-We will visualize results for each year using [`tmap`](https://cran.r-project.org/web/packages/tmap/tmap.pdf) [@tmapCite] package. Areas in which p-value is less than the significance level $0.05$ (in other words areas where z-scores are higher than `qnorm(0.95) = 1.65`) are the ones for which we reject null hypothesis $H_0$ and conclude they present positive spatial autocorrelation. We will visualize Tree percentage of each year and Local Moran's I statistic as well, to also observe how these changed over time.
+We will visualize results for each year using `tmap` [@tmapCite] package. Areas in which p-value is less than the significance level $0.05$ (in other words areas where z-scores are higher than `qnorm(0.95) = 1.65`) are the ones for which we reject null hypothesis $H_0$ and conclude they present positive spatial autocorrelation. We will visualize Tree percentage of each year and Local Moran's I statistic as well, to also observe how these changed over time.
 
-![](Images/lmi2018.png)
+![Moran's I Statistics for 2018.](Images/lmi2018.png)
 
-![](Images/lmi2019.png)
+![Moran's I Statistics for 2019.](Images/lmi2019.png)
 
-![](Images/lmi2020.png)
+![Moran's I Statistics for 2020.](Images/lmi2020.png)
 
-![](Images/lmi2021.png)
+![Moran's I Statistics for 2021.](Images/lmi2021.png)
 
-![](Images/lmi2022.png)
+![Moran's I Statistics for 2022.](Images/lmi2022.png)
 
-![](Images/lmi2023.png)
+![Moran's I Statistics for 2023.](Images/lmi2023.png)
 
 As the `tree_percentage` variable shows, there are slight changes in the tree percentage for each area over the years. Similarly, the Moran's I statistics calculated for each year also reflect these differences. The plots for each year illustrate areas with positive spatial autocorrelation (states in which $p-Value$ is less than $0.05$).
 
@@ -671,11 +671,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                           |                                                           |
+|                                                            |                                                            |
 |------------------------------------|------------------------------------|
-| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -1335,7 +1335,7 @@ The goal of this comparison is to determine the extent to which tree coverage tr
 -   **Multiple Variables**: The clusters become more **fragmented** and **localized**. This fragmentation likely reflects the more complex land-use dynamics in these regions. Regions where built-up areas and agricultural activities are significant now influence cluster membership, showing that the competition for land use plays a larger role than just changes in tree cover. Interestingly, a smaller cluster emerges in Switzerland, grouping a few regions together, which presents an unusual and unexpected pattern in the analysis and needs further inspection to why this assignment would make sense.
 
 |                              |                              |                              |
-|------------------------------|------------------------------|------------------------------|
+|------------------------|------------------------|------------------------|
 | ![](Images/parcoord2018.png) | ![](Images/parcoord2019.png) | ![](Images/parcoord2020.png) |
 | ![](Images/parcoord2021.png) | ![](Images/parcoord2022.png) | ![](Images/parcoord2023.png) |
 
