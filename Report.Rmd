@@ -14,11 +14,14 @@ output:
     toc_depth: '4'
     df_print: paged
 subtitle: Bachelor Thesis in Computational Statistics
+link-citations: true
+bibliography: references.bib
+csl: ieee.csl
 ---
 
 # Introduction
 
-Sustainability is a critical challenge facing today's society, particularly in Central Europe, where land use, environmental degradation, and industrial activities are significant factors. To address these issues, it is essential to monitor and analyze spatio-temporal data over time, uncovering patterns that can inform policy and decision-making. This report focuses on the spatio-temporal analysis of sustainability data, combining diverse datasets on land cover, mining locations, burned areas, and emissions across multiple years (2018-2023). These datasets, gathered from various sources such as the [Land Cover Data Set](https://livingatlas.arcgis.com/landcoverexplorer/), [Global Mining Locations Data](https://data.world/environmentdata/global-mining-locations-data), and the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/), offer a comprehensive view of environmental changes in the region. Additional datasets from [Global Forest Watch Dashboards](https://www.globalforestwatch.org/dashboards/global/), covering 2001--2023, are utilized to offer deeper insights into factors influencing tree cover changes in Central Europe.
+Sustainability is a critical challenge facing today's society, particularly in Central Europe, where land use, environmental degradation, and industrial activities are significant factors. To address these issues, it is essential to monitor and analyze spatio-temporal data over time, uncovering patterns that can inform policy and decision-making. This report focuses on the spatio-temporal analysis of sustainability data, combining diverse datasets on land cover, mining locations, burned areas, and emissions across multiple years (2018-2023). These datasets, gathered from various sources such as the [Land Cover Data Set](https://livingatlas.arcgis.com/landcoverexplorer/)[@landcover_data], [Global Mining Locations Data](https://data.world/environmentdata/global-mining-locations-data)[@maus2020global_mining_data], and the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/), offer a comprehensive view of environmental changes in the region. Additional data sets from [Global Forest Watch Dashboards](https://www.globalforestwatch.org/dashboards/global/), covering 2001-2023, are utilized to offer deeper insights into factors influencing tree cover changes in Central Europe.
 
 The project is structured into three main parts. The first part, **Data Collection and Preparation**, involves gathering and processing relevant spatial data. The second part, **Data Description**, provides a visual and descriptive analysis of the data, examining its spatio-temporal distribution and identifying the impact of various environmental factors on tree cover changes. Finally, the third part employs different **Clustering Methods** to group the spatio-temporal data into clusters, providing meaningful insights into sustainability trends across the region.
 
@@ -28,7 +31,7 @@ This approach enables a nuanced understanding of how environmental changes are e
 
 ## Land Cover Data Set
 
-To perform a spatio-temporal analysis of tree cover change in a specific country from 2018 to 2023, we sourced geospatial data from the [*Living Atlas*](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=9.40600%2C45.75100%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0). This dataset provides annual land cover information, including tree cover, in a tile-based GeoTiff format. The *Living Atlas* offers users the ability to explore various land cover types through satellite imagery, covering categories such as *Trees, Water, Crops, Snow/Ice, Built Areas, Clouds, Flooded Vegetation, Bare Ground, and Rangeland* for the period between 2018 and 2023. More detailed information about the dataset is available [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d).
+To perform a spatio-temporal analysis of tree cover change in a specific country from 2018 to 2023, we sourced geospatial data from the [*Living Atlas*](https://livingatlas.arcgis.com/landcoverexplorer/#mapCenter=9.40600%2C45.75100%2C6&mode=swipe&timeExtent=2018%2C2022&renderingRule=0)[@landcover_data]. This dataset provides annual land cover information, including tree cover, in a tile-based GeoTiff format. The *Living Atlas* offers users the ability to explore various land cover types through satellite imagery, covering categories such as *Trees, Water, Crops, Snow/Ice, Built Areas, Clouds, Flooded Vegetation, Bare Ground, and Rangeland* for the period between 2018 and 2023. More detailed information about the dataset is available [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d).
 
 Since the dataset is available in a tile-based GeoTIFF format, allowing for high-resolution geographic data to be analyzed over time, to efficiently collect the relevant data for the Central European region, I developed a custom function to automate the process of generating download links and retrieving the necessary files.
 
@@ -97,7 +100,7 @@ files_list <- lapply(years, get_files)
 names(files_list) <- years
 ```
 
-Once the files were loaded into R, they were rasterized using the `terra::rast` function, preparing them for further geo-spatial operations.
+Once the files were loaded into R, they were rasterized using the [`terra::rast`](https://cran.r-project.org/web/packages/terra/terra.pdf#Rfn.rast.1) [@terraRastCite] from `terra` package[@terraCite] function, preparing them for further geo-spatial operations.
 
 ```{r eval=FALSE, include=TRUE}
 rasters_list <- lapply(files_list, function(file_paths) {
@@ -107,7 +110,7 @@ rasters_list <- lapply(files_list, function(file_paths) {
 
 ### Cropping and Masking Rasters
 
-To ensure that the analysis focuses solely on Central Europe, the raster data was cropped and masked based on the spatial boundaries of the selected countries. The `terra:aggregate` function reduces the resolution for computational efficiency, while the `terra::project` function ensures that the rasters have a consistent coordinate reference system (CRS). The resulting rasters were saved in `GeoTIFF` format, enabling the creation of virtual raster layers. These virtual layers are more computationally efficient and better suited for handling large-scale geospatial data during analysis.
+To ensure that the analysis focuses solely on Central Europe, the raster data was cropped ([`terra::crop`](https://cran.r-project.org/web/packages/terra/terra.pdf#Rfn.crop.1) [@terraCropCite]) and masked ([`terra::mask`](https://cran.r-project.org/web/packages/terra/terra.pdf#Rfn.mask.1) [@terraMaskCite]) based on the spatial boundaries of the selected countries. The [`terra::aggregate`](https://cran.r-project.org/web/packages/terra/terra.pdf#Rfn.aggregate.1) [@terraAggregateCite] function reduces the resolution for computational efficiency, while the [`terra::project`](https://cran.r-project.org/web/packages/terra/terra.pdf#Rfn.project.1) [@terraProjectCite] function ensures that the rasters have a consistent coordinate reference system (CRS). The resulting rasters were saved in `GeoTIFF` format, enabling the creation of virtual raster layers. These virtual layers are more computationally efficient and better suited for handling large-scale geospatial data during analysis.
 
 ```{r eval=FALSE, include=TRUE}
 crs <- "EPSG:4326"
@@ -167,7 +170,7 @@ By plotting one of these virtual layers, I was able to confirm that the cropping
 
 In the Land Cover dataset, each coordinate point is assigned one of 10 possible values, representing different land cover types. These values correspond to categories such as *water (`value 1`), Trees (`value 2`), Flooded vegetation (`value 4`), Crops (`value 5`), Built area (`value 7`), Bare Ground (`value 8`), Snow/Ice (`value 9)`, Clouds (`value 10)`* or *Rangeland (`value 11`).* The visual representation of these points is determined by their color on the raster, which indicates the type of land cover. Further details about these variables can be found [here](https://www.arcgis.com/home/item.html?id=cfcb7609de5f478eb7666240902d4d3d). For more information on how the values correspond to their original colors, refer to my submission on [GitHub](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Country-GeoTIFF-Analysis.html), where I first explored the Land Cover dataset.
 
-To analyze land cover data across different years, we used the `exact_extract` function from the `exactextractr` package. This function calculates the total area (in km²) of each administrative region in Central Europe and determines what percentage of that area is covered by specific land cover types, such as water, trees, and built areas. The function `calculate_coverage_percentage` was created to perform these calculations for each region and store the results in separate data frames for each year. Each data frame contains the total area of a region and the percentage of that region covered by various land cover types.
+To analyze land cover data across different years, we used the [`exact_extract`](https://cran.r-project.org/web/packages/exactextractr/exactextractr.pdf#Rfn.exact.Rul.extract.1) [@extractextractFuncCite] function from the `exactextractr` [@extractrCite] package. This function calculates the total area (in km²) of each administrative region in Central Europe and determines what percentage of that area is covered by specific land cover types, such as water, trees, and built areas. The function `calculate_coverage_percentage` was created to perform these calculations for each region and store the results in separate data frames for each year. Each data frame contains the total area of a region and the percentage of that region covered by various land cover types.
 
 ```{r eval=FALSE, include=TRUE}
 calculate_coverage_percentage <- function(raster, polygons) {
@@ -270,7 +273,7 @@ for (i in 2:length(extracted_values)) {
 
 ## Mining Data
 
-The mining location data was obtained from [data.world](https://data.world), and I chose to use the GeoTIFF image in 30 arcsecond resolution for the best spatial accuracy. The data file can be downloaded from [this link](https://data.world/environmentdata/global-mining-locations-data). Since the GeoTIFF image contains global mining locations, the raster was cropped to focus on Central Europe for the purpose of this analysis. Upon examining the dataset, I found that raster points with values greater than zero represent mining areas. Using this information, we extracted the coverage of mining areas in each administrative region in Central Europe. Additionally, we calculated the percentage of each region's area covered by mines.
+The mining location data [@maus2020global_mining_data] was obtained from [*data.world*](https://data.world), and I chose to use the GeoTIFF image in 30 arcsecond resolution for the best spatial accuracy. The data file can be downloaded from [this link](https://data.world/environmentdata/global-mining-locations-data). Since the GeoTIFF image contains global mining locations, the raster was cropped to focus on Central Europe for the purpose of this analysis. Upon examining the dataset, I found that raster points with values greater than zero represent mining areas. Using this information, we extracted the coverage of mining areas in each administrative region in Central Europe. Additionally, we calculated the percentage of each region's area covered by mines.
 
 The following code extracts mining area coverage for each region:
 
@@ -301,7 +304,7 @@ After extracting the mining data, the new columns were integrated into our exist
 
 ## Burned Areas Data
 
-The *Global Monthly Burned Area [2002 - 2023]* dataset was sourced from the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded from this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/MCD64A1_burned_area_full_dataset_2002-2023.zip). It provides information on the monthly burned areas (in hectares) for each country and its administrative regions. The data spans from 2002 to 2023. For this project, I filtered the dataset to only include records from 2018 to 2023, as these were the years relevant to my analysis.
+The *Global Monthly Burned Area [2002 - 2023]* [@globalMonthlyWildFire] dataset was sourced from the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded from this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/MCD64A1_burned_area_full_dataset_2002-2023.zip). It provides information on the monthly burned areas (in hectares) for each country and its administrative regions. The data spans from 2002 to 2023. For this project, I filtered the dataset to only include records from 2018 to 2023, as these were the years relevant to my analysis.
 
 ![Columns in Burned Areas Data Set](Images/Screenshot%20from%202024-09-27%2011-40-27.png)
 
@@ -319,7 +322,7 @@ To merge this dataset with our existing data, I cleaned the data and transformed
 
 ## Central Europe Emissions Data
 
-*GFED Global Monthly Emissions [2002 - 2023]* data set can also be found on [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded following this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/emission_gfed_full_2002_2023.zip). provides monthly emissions data for various pollutants, such as CO2, CO, PM25, and CH4, across the globe. This dataset contains emission observations for first-level administrative regions of each country in the world.
+*GFED Global Monthly Emissions [2002 - 2023]* [@globalMonthlyEmissions] data set can also be found on [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads) and can be downloaded following this [link](https://effis-gwis-cms.s3.eu-west-1.amazonaws.com/apps/country.profile/emission_gfed_full_2002_2023.zip). provides monthly emissions data for various pollutants, such as CO2, CO, PM25, and CH4, across the globe. This dataset contains emission observations for first-level administrative regions of each country in the world.
 
 ![Emission Data Set Columns](Images/Screenshot%20from%202024-09-27%2011-48-02.png)
 
@@ -331,7 +334,7 @@ Dataset can be viewed and downloaded from [here](https://github.com/mpetojevic/S
 
 ## Global Forest Watch Dashboard Data
 
-For the Shiny App, which will be discussed in detail later, I also sourced data from the [Global Forest Dashboards](https://www.globalforestwatch.org/dashboards/global/). The dashboard provides downloadable data for each country for various purposes. The datasets I used include **Tree Cover Loss (2001-2020)**, **Annual Tree Cover Loss by Dominant Driver**, **Tree Cover Loss Due to Fires**, and **Components of Net Change in Tree Cover**. This data was downloaded separately for each country and then merged into separate data frames to cover the entire Central European region. These data frames can be accessed on my GitHub page [here](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/tree/main/Shiny-App) and code for on data collection process can be found in [this file](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/Data-Collection-Shiny-App/Data-Collection-For-Shiny-App.Rmd).
+For the Shiny App, I also sourced data from the [Global Forest Dashboards](https://www.globalforestwatch.org/dashboards/global/). The dashboard provides downloadable data for each country for various purposes. The datasets I used include **Tree Cover Loss (2001-2020)**, **Annual Tree Cover Loss by Dominant Driver**, **Tree Cover Loss Due to Fires**, and **Components of Net Change in Tree Cover**. This data was downloaded separately for each country and then merged into separate data frames to cover the entire Central European region. These data frames can be accessed on my GitHub page [here](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/tree/main/Shiny-App) and code for on data collection process can be found in [this file](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/Data-Collection-Shiny-App/Data-Collection-For-Shiny-App.Rmd).
 
 # Sample Description
 
@@ -359,7 +362,7 @@ Tree cover loss is significant across all Central European countries, but the fa
 **Note**: This and following sections will include some code snippets, the whole code which you can run and play with it, can be found on my Github page in [this document.](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Shiny-App/try.R)
 :::
 
-Spatial autocorrelation describes the extent to which a variable is correlated with itself across space. A similar concept is found in [Tobler's First Law of Geography](https://www.jstor.org/stable/143141?origin=crossref), which states that *"everything is related to everything else, but near things are more related than distant things".*
+Spatial autocorrelation describes the extent to which a variable is correlated with itself across space. A similar concept is found in [Tobler's First Law of Geography](https://www.jstor.org/stable/143141?origin=crossref) [@firstLawOfGeography], which states that *"everything is related to everything else, but near things are more related than distant things".*
 
 Positive spatial autocorrelation occurs when similar values are clustered together, while negative spatial autocorrelation occurs when dissimilar values are located near each other. Spatial autocorrelation can be assessed using indices that summarize the degree to which similar observations occur near each other within a dataset.
 
@@ -422,7 +425,7 @@ To test spatial autocorrelation, we follow these steps:
 -   If $p$-value \< $\alpha$ (usually $\alpha = 0.05$), we reject the null hypothesis and conclude there is spatial autocorrelation.
 -   If $p$-value $\geq \alpha$, we fail to reject the null hypothesis and conclude there is no evidence of spatial autocorrelation.
 
-In order to gain first impressions about spatial autocorrelation of `tree_percentage` over the years, we will examine Moran's I scatterplots for each year. The `moran.plot()` function is used to create these scatterplots, which visualize the relationship between each observation and its spatially lagged values (i.e., the weighted average of its neighboring values). Using the `lag.listw()` function from the `spdep` package, we compute the spatial weights that help highlight this relationship and that are also used by other functions of `spdep` package which are going to be discussed in further work.
+In order to gain first impressions about spatial autocorrelation of `tree_percentage` over the years, we will examine Moran's I scatterplots for each year. The [`moran.plot()`](https://cran.r-project.org/web/packages/spdep/spdep.pdf#Rfn.moran.plot.1) [@moranPlotCite] function is used to create these scatterplots, which visualize the relationship between each observation and its spatially lagged values (i.e., the weighted average of its neighboring values). Using the [`nb2listw()`](https://cran.r-project.org/web/packages/spdep/spdep.pdf#Rfn.nb2listw.1) [@nb2listCite] function from the `spdep` [@spdepCite] package, we compute the spatial weights that help highlight this relationship and that are also used by other functions of `spdep` package which are going to be discussed in further work.
 
 ```{r eval=FALSE, include=TRUE}
 nb <- poly2nb(data_with_state_boarders$geometry, queen = TRUE) # 'queen' contiguity for neighbors, meaning two neighbours share point of boarder
@@ -451,7 +454,7 @@ for (year_col in year_columns) {
 
 All scatterplots show a **positive linear relationship**, meaning that states with higher tree percentages tend to be surrounded by states with similarly high values (and vice versa for low values). This suggests **positive spatial autocorrelation**, indicating that similar values are clustered together rather than randomly distributed. **High-High clusters** (top-right quadrant) contain states with higher-than-average tree percentages surrounded by similarly high tree percentage neighbors. **Low-Low clusters** (bottom-left quadrant) contain states with lower-than-average tree percentages surrounded by neighbors with similarly low tree percentages. There are a few states that appear in the **top-left or bottom-right quadrants**, indicating potential **spatial outliers** (e.g., a high tree percentage surrounded by low tree percentage neighbors, or vice versa). These could be regions where local conditions differ significantly from their neighbors. Across all six plots, there is a consistent positive trend, meaning that the spatial autocorrelation of tree percentage remains stable over time. Each year shows similar clustering behavior, with relatively few outliers.
 
-As we have gained an idea about spatial autocorrelation of our variable of interest, we aim to test our hypothesis of positive spatial autocorrelation. At the first step we are going to employ function `moran.test()` of the [`spdep`](https://cran.r-project.org/web/packages/spdep/spdep.pdf) package to test spatial autocorrelation using Moran's I. this function allows us to set argument called `alternative` which denotes alternative hypothesis and can be set to `greater`, `less` or `two.sided`. For this test we are going to set `alternative="greater"` which specifies hypothesis as follows:
+As we have gained an idea about spatial autocorrelation of our variable of interest, we aim to test our hypothesis of positive spatial autocorrelation. At the first step we are going to employ function [`moran.test()`](https://cran.r-project.org/web/packages/spdep/spdep.pdf#Rfn.moran.test.1) [@moranTestCite] of the `spdep` [@spdepCite] package to test spatial autocorrelation using Moran's I. this function allows us to set argument called `alternative` which denotes alternative hypothesis and can be set to `greater`, `less` or `two.sided`. For this test we are going to set `alternative="greater"` which specifies hypothesis as follows:
 
 -   $H_0: I\leq E[i]$ (negative spatial autocorrelation or no spatial autocorrelation)
 
@@ -486,9 +489,9 @@ Next, we extract Moran's I statistic and corresponding p-values for each year to
 
 As seen in the computed values, the p-values for each year are below the 0.05 significance level, allowing us to reject the null hypothesis. This indicates strong evidence of positive spatial autocorrelation in the `tree_percentage` variable across all years from 2018 to 2023.
 
-To further assess the significance, we can utilize a Monte Carlo approach. This method creates random patterns by reassigning the observed values among fixed areas and calculates Moran's I for each randomized pattern. The p-values are then computed as the proportion of simulated values that are as extreme or more extreme than the observed statistic, thereby providing a randomization-based significance test. The `spdep` package provides the `moran.mc()` function to perform this Monte Carlo simulation.
+To further assess the significance, we can utilize a Monte Carlo approach. This method creates random patterns by reassigning the observed values among fixed areas and calculates Moran's I for each randomized pattern. The p-values are then computed as the proportion of simulated values that are as extreme or more extreme than the observed statistic, thereby providing a randomization-based significance test. The `spdep` package provides the [`moran.mc()`](https://cran.r-project.org/web/packages/spdep/spdep.pdf#Rfn.moran.mc.1) [@moranmcCite] function to perform this Monte Carlo simulation.
 
-We are going to calculate Moran's I statistic using `moran.mc()` employing 999 simulations and extract the results into a data frame in order to make plots that reveal a pattern and let us decide on our hypothesis:
+moranmcCiteWe are going to calculate Moran's I statistic using `moran.mc()` employing 999 simulations and extract the results into a data frame in order to make plots that reveal a pattern and let us decide on our hypothesis:
 
 ```{r eval=FALSE, include=TRUE}
 monte_carlo_results <- list()
@@ -507,7 +510,7 @@ In our case, this holds true, as the Monte Carlo randomization approach reinforc
 
 ### Local Moran's I and Local Indicators of Spatial Association (LISA)
 
-The Global Moran's I provides a measure of spatial autocorrelation for the entire study area. However, it is often useful to analyze spatial clustering at a more localized level using [Local Indicators of Spatial Association (LISA)](https://onlinelibrary.wiley.com/doi/10.1111/j.1538-4632.1995.tb00338.x). LISA measures the degree of spatial clustering around each observation. One key property of LISA is that the sum of the local Moran's I values across all regions is proportional to the global Moran's I. This allows us to break the global statistic into local components, offering more granular insights.
+The Global Moran's I provides a measure of spatial autocorrelation for the entire study area. However, it is often useful to analyze spatial clustering at a more localized level using [Local Indicators of Spatial Association (LISA)](https://onlinelibrary.wiley.com/doi/10.1111/j.1538-4632.1995.tb00338.x) [@anselin1995lisa]. LISA measures the degree of spatial clustering around each observation. One key property of LISA is that the sum of the local Moran's I values across all regions is proportional to the global Moran's I. This allows us to break the global statistic into local components, offering more granular insights.
 
 Widely used LISA metrics is the **local Moran's I**. For region $i$, the local Moran's I is defined as:
 
@@ -529,7 +532,7 @@ To interpret the local Moran's I for each region, we create a map of **p-values*
 
 **"Greater Local Moran's I Test"**
 
-In this section, we calculate the **Local Moran's I** statistic for each year from 2018 to 2023 to explore the local spatial autocorrelation patterns for the variable `tree_percentage`. We use the `localmoran()` function from the `spdep` package, which computes Local Moran's I based on the spatial weights for the data. we again set alternative hypothesis to "greater", where:
+In this section, we calculate the **Local Moran's I** statistic for each year from 2018 to 2023 to explore the local spatial autocorrelation patterns for the variable `tree_percentage`. We use the `localmoran()` [@localMoranCite] function from the `spdep` [@spdepCite] package, which computes Local Moran's I based on the spatial weights for the data. we again set alternative hypothesis to "greater", where:
 
 -   $H_0$: No or negative spatial autocorrelation.
 
@@ -573,7 +576,7 @@ for (year_col in year_columns) {
 }
 ```
 
-We will visualize results for each year using [`tmap`](https://cran.r-project.org/web/packages/tmap/tmap.pdf) package. Areas in which p-value is less than the significance level $0.05$ (in other words areas where z-scores are higher than `qnorm(0.95) = 1.65`) are the ones for which we reject null hypothesis $H_0$ and conclude they present positive spatial autocorrelation. We will visualize Tree percentage of each year and Local Moran's I statistic as well, to also observe how these changed over time.
+We will visualize results for each year using [`tmap`](https://cran.r-project.org/web/packages/tmap/tmap.pdf) [@tmapCite] package. Areas in which p-value is less than the significance level $0.05$ (in other words areas where z-scores are higher than `qnorm(0.95) = 1.65`) are the ones for which we reject null hypothesis $H_0$ and conclude they present positive spatial autocorrelation. We will visualize Tree percentage of each year and Local Moran's I statistic as well, to also observe how these changed over time.
 
 ![](Images/lmi2018.png)
 
@@ -718,7 +721,7 @@ time_series_data <- data_with_state_boarders %>%
 
 Just by looking at the time series data of `tree_percentage` in our data set, we get an idea of its consistency over time and slight changes that each state experienced, but to understand the dynamics of tree percentage over time, we calculated the correlation between the tree percentage values in one year and the corresponding values from the previous year (i.e., the **lagged values**). This approach helps quantify how much a region's tree cover in a given year is influenced by its tree cover in the preceding year. The rationale behind this is that if a region's tree percentage is strongly correlated with its value from the previous year, it implies a level of **stability** or **persistence** in tree coverage. Conversely, a weak or negative correlation would suggest potential **fluctuations** or **changes** in forestation.
 
-The correlation between the tree percentage values and their lagged values is computed using **Pearson correlation**. Pearson correlation quantifies the linear relationship between two variables---in this case, the tree percentage for a given year and the tree percentage from the previous year (lagged values). The formula for Pearson correlation between two variables $X$ (tree percentage) and $Y$ (lagged tree percentage) is:
+The correlation between the tree percentage values and their lagged values is computed using **Pearson correlation** [@pearsonsCorrCite]. Pearson correlation quantifies the linear relationship between two variables---in this case, the tree percentage for a given year and the tree percentage from the previous year (lagged values). The formula for Pearson correlation between two variables $X$ (tree percentage) and $Y$ (lagged tree percentage) is:
 
 $$
 r = \frac{\sum{(X_i - \bar{X})(Y_i - \bar{Y})}}{\sqrt{\sum{(X_i - \bar{X})^2} \sum{(Y_i - \bar{Y})^2}}}
@@ -935,7 +938,7 @@ We aim to model and predict tree percentage based on multiple land-use and pollu
 
 As a critical step before model fitting, we examine the correlation matrix to explore the relationships between the selected land-use and pollution-related variables. This helps us understand how these variables interact and their potential influence on **tree percentage**.
 
-Through earlier correlation analysis between **tree percentage** and several variables such as **built area percentage** and **crops percentage**, we gained some deep insights and have seen that tree percentage in the most of the Central European areas correlates heavily negative with these variables.
+Through earlier correlation analysis between **tree percentage** and several variables such as **built area percentage** and **crops percentage**, we gained some deep insights and have seen that tree percentage in the most of the Central European areas correlates heavily negative with these variables. To visualize the correlation between variables, we are going to use `corrplot` function from R package of the same name [@corrplot2024].
 
 ```{r eval=FALSE, include=TRUE}
 corr_data <- time_series_data %>%
@@ -966,7 +969,7 @@ test_data <- time_series_data %>% filter(year == 2023)
 
 #### Linear Regression Model
 
-First we tried to fit a simple linear model where tree percentage is assumed to have a linear relationship with land-use and pollution-related variables.
+First we tried to fit a simple linear model using `lm` function form `stats` [@statsCite] package where tree percentage is assumed to have a linear relationship with land-use and pollution-related variables.
 
 ```{r eval=FALSE, include=TRUE}
 lm_model <- lm(tree_percentage ~ built_area_percentage + crops_percentage 
@@ -985,7 +988,7 @@ test_data$predicted_lm <- predict(lm_model, newdata = test_data)
 
 #### Random Forest Regression
 
-Random Forest Regression Model combines multiple decision trees to create a single model. Each tree in the forest builds from different subset of the data and makes its own independent prediction, whereas the final prediction for the input is based on the average or weighted average of all the individual trees' predictions. This introduces a more flexible non-linear model which could help us capture more complex relationships between the tree percentage and predictor variables.
+Random Forest [@rfCitation] Regression Model combines multiple decision trees to create a single model. Each tree in the forest builds from different subset of the data and makes its own independent prediction, whereas the final prediction for the input is based on the average or weighted average of all the individual trees' predictions. This introduces a more flexible non-linear model which could help us capture more complex relationships between the tree percentage and predictor variables.
 
 ```{r eval=FALSE, include=TRUE}
 model_rf <- randomForest(tree_percentage ~ built_area_percentage + crops_percentage 
@@ -1005,7 +1008,7 @@ There are two main clusters of points below and under the ideal (red) line. The 
 
 #### Neural Network Model
 
-Neural networks are a class of machine learning models inspired by the structure and function of the human brain, making them highly effective at capturing complex, non-linear relationships in data. Given the diverse and multi-dimensional nature of my dataset, which includes variables like built area percentage, crops percentage, and pollution levels, a neural network was a promising candidate for predicting tree percentage. By employing multiple hidden layers and non-linear transformations, the model has the potential to uncover intricate interactions between these variables that traditional linear models might overlook.
+Neural networks are a class of machine learning models inspired by the structure and function of the human brain, making them highly effective at capturing complex, non-linear relationships in data. In R, package `nnet` [@nnetCite] allows users to train such neural network models. Given the diverse and multi-dimensional nature of the dataset, which includes variables like built area percentage, crops percentage, and pollution levels, a neural network was a promising candidate for predicting tree percentage. By employing multiple hidden layers and non-linear transformations, the model has the potential to uncover intricate interactions between these variables that traditional linear models might overlook.
 
 ```{r eval=FALSE, include=TRUE}
 nn_model <- nnet(tree_percentage ~ built_area_percentage + crops_percentage 
@@ -1026,7 +1029,7 @@ Although neural networks are powerful, they can also be prone to overfitting, es
 
 #### XGBoost Regression Model
 
-XGBoost is an advanced ensemble learning technique that efficiently handles non-linearities and complex interactions in the data. This model uses similar decision tree approach as Random Forest Regression, with the difference, that XGBoost develops one tree at a time, correcting faults caused by previously trained trees, where as Random Forest generates each tree independently and aggregates results at the end. The gradient decent algorithm is used to minimize the loss when adding new trees.
+XGBoost [@xgBoostCite] is an advanced ensemble learning technique that efficiently handles non-linearities and complex interactions in the data. This model uses similar decision tree approach as Random Forest Regression, with the difference, that XGBoost develops one tree at a time, correcting faults caused by previously trained trees, where as Random Forest generates each tree independently and aggregates results at the end. The gradient decent algorithm is used to minimize the loss when adding new trees.
 
 ```{r eval=FALSE, include=TRUE}
 train_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage 
@@ -1058,9 +1061,32 @@ test_data$predicted_xgboost <- predict(xgb_model, test_matrix)
 
 ### Model Comparison
 
+#### RMSE Metric
+
+We can use $RMSE$ (Root Mean Squared Error), to evaluate models performances. $RMSE$ measures the average magnitude of the errors between predicted and actual values.
+
+$$
+RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}
+$$
+
+Where $y_i$ is the actual value, $\hat{y}_i$ is the predicted value and $n$ is the number of data points.
+
+**Low** $RMSE$ indicates that the predicted values are very close to the actual values, which means the model is performing well, where as **high** $RMSE$ suggests that there are significant errors in the model's predictions and that the model may not be capturing the underlying patterns in data well.
+
+```{r eval=FALSE, include=TRUE}
+rmse_lm <- sqrt(mean((test_data$tree_percentage - test_data$predicted_lm)^2))
+rmse_rf <- sqrt(mean((test_data$tree_percentage - test_data$predicted_rf)^2))
+rmse_nnet <- sqrt(mean((test_data$tree_percentage - test_data$predicted_nnet)^2))
+rmse <- sqrt(mean((test_data$tree_percentage - test_data$predicted_xgboost)^2))
+```
+
+![$RMSE$ Results.](Images/Screenshot%20from%202024-10-17%2013-20-07.png){width="414"}
+
+XGBoost achieved the lowest $RMSE$ of 1.56 as well as the $R²$ closest to 1, indicating that it is really the best performing model in our case. The relatively low error suggests that XGBoost can accurately predict tree percentage based on the input features. Random Forest model also performed quite well considering its low $RMSE$ of 2.51 and $R²$ very close to 1. Linear Model had decent performance once again and Neural Network Model performed the worst out of all, which we previously observed.
+
 #### R-Squared Metric
 
-We will now compare the four models once again to ensure that XGBoost is indeed the best fitting model. To do this, we can use the R-squared metric, also known as the coefficient of determination, which measures how well the model's predictions align with the actual data.
+We will now compare the four models once again to ensure that XGBoost is indeed the best fitting model. To do this, we will utilize the R-squared metric, also known as the coefficient of determination, which measures how well the model's predictions align with the actual data and is known to be more informative in regression analysis evaluation than other metrics [@chicco2021r_squared] (SMAPE, MAE, MAPE, MSE and RMSE).
 
 $$
 R^2 = 1 - \frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{\sum_{i=1}^{n} (y_i - \bar{y})^2}
@@ -1091,29 +1117,6 @@ rsquared_xgb <- rsquared(test_data$tree_percentage, test_data$predicted_xgboost)
 ![$R²$ Results.](Images/Screenshot%20from%202024-10-17%2013-06-31.png)
 
 The results show that XGBoost is the best-performing model compared to the others tested, as demonstrated by its R-squared value of nearly 1, indicating a near-perfect fit. This suggests that XGBoost is able to capture almost all the variability in the tree percentage, making it the most reliable for predictions in our dataset. Random Forest model also indicates high R-squared metric but XGBoost stil indicates slightly higher R-squared value and better model fitting.
-
-#### RMSE Metric
-
-On the other hand, we can also use $RMSE$ (Root Mean Squared Error), to compare models. $RMSE$ measures the average magnitude of the errors between predicted and actual values.
-
-$$
-RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}
-$$
-
-Where $y_i$ is the actual value, $\hat{y}_i$ is the predicted value and $n$ is the number of data points.
-
-**Low** $RMSE$ indicates that the predicted values are very close to the actual values, which means the model is performing well, where as **high** $RMSE$ suggests that there are significant errors in the model's predictions and that the model may not be capturing the underlying patterns in data well.
-
-```{r eval=FALSE, include=TRUE}
-rmse_lm <- sqrt(mean((test_data$tree_percentage - test_data$predicted_lm)^2))
-rmse_rf <- sqrt(mean((test_data$tree_percentage - test_data$predicted_rf)^2))
-rmse_nnet <- sqrt(mean((test_data$tree_percentage - test_data$predicted_nnet)^2))
-rmse <- sqrt(mean((test_data$tree_percentage - test_data$predicted_xgboost)^2))
-```
-
-![$RMSE$ Results.](Images/Screenshot%20from%202024-10-17%2013-20-07.png){width="414"}
-
-XGBoost achieved the lowest $RMSE$ of 1.56 as well as the $R²$ closest to 1, indicating that it is really the best performing model in our case. The relatively low error suggests that XGBoost can accurately predict tree percentage based on the input features. Random Forest model also performed quite well considering its low $RMSE$ of 2.51 and $R²$ very close to 1. Linear Model had decent performance once again and Neural Network Model performed the worst out of all, which we previously observed.
 
 ### Importance of Predictor Variables
 
@@ -1375,8 +1378,10 @@ We then delved into spatio-temporal clustering to uncover deeper patterns. We we
 
 However, not all variables contributed meaningfully. When I incorporated pollution and emissions data, the results were less informative, and many regions ended up being grouped into a single large cluster. This was consistent with the earlier finding in the XGBoost analysis, where pollution variables had minimal importance, likely due to the sporadic nature of the data or the lack of consistent emissions records across the years.
 
-There is potential to build on this work by incorporating socioeconomic factors such as population density or economic activity, which would provide a more comprehensive picture of human influence on land use. It would also be beneficial to find better suited polution data and discover its influences on the changes in tree percentage. Future research could refine the clustering approach by testing more advanced algorithms capable of handling the complex relationships between environmental features. There is also room to build predictive models that forecast how regions might evolve based on current land-use patterns and emerging environmental challenges.
+There is potential to build on this work by incorporating socioeconomic factors such as population density or economic activity, which would provide a more comprehensive picture of human influence on land use. It would also be beneficial to find better suited pollution data and discover its influences on the changes in tree percentage. Future research could refine the clustering approach by testing more advanced algorithms capable of handling the complex relationships between environmental features. There is also room to build predictive models that forecast how regions might evolve based on current land-use patterns and emerging environmental challenges.
 
 ## Acknowledgment
 
 I would like to thank my supervisor, Prof. Dr. Laura Vana Gür, for giving me the opportunity to work on this topic and for guiding me through the process of my first scientific research.
+
+## References
