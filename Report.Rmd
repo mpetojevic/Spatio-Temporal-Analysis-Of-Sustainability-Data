@@ -854,7 +854,7 @@ correlation_results <- time_series_data %>%
 ### Accessing Correlation
 
 |                                          |                                  |                                           |
-|-----------------------|--------------------------|-----------------------|
+|-------------------------|---------------------|--------------------------|
 | ![](Images/treecropcor.png){width="218"} | ![](Images/treerangelandcor.png) | ![](Images/treebuiltcor.png){width="227"} |
 
 : Correlation of Tree Percentage and Crops percentage, Rangeland Percentage and Built Area Percentage.
@@ -1138,11 +1138,15 @@ In this section, we aim to simulate how changes in key predictor variables could
 To achieve this, we define a simulation function that applies percentage-based reductions to key variables such as *`built_area_percentage`*, *`crops_percentage`*, and *`CO2_total`* (as a representative of pollution, since other gas emissions showed importance for the model very near zero). For example, reducing built areas by 10%, crops by 10%, and pollution by 20% helps us explore how these changes can optimize tree coverage. Although `water_percentage` and `rangeland_percentage` play crucial roles in predicting tree percentage, it wouldn't be realistic to simulate changes to these values. Increasing water percentage, which supports tree growth, or decreasing rangeland percentage, which primarily reduces tree cover, would involve altering natural land cover types. Reducing rangeland would result in the destruction of natural habitats, and it is not feasible for land-use management to artificially increase water percentage without negatively impacting other environmental factors. Water must reach the land through natural processes.
 
 ```{r eval=FALSE, include=TRUE}
-simulate_tree_percentage <- function(data, model,
-                                     built_area_change, crops_change,
+train_data <- time_series_data %>% filter(year < 2023)
+test_data <- time_series_data %>% filter(year == 2023)
+
+simulate_tree_percentage <- function(test_data, model, 
+                                     built_area_change, crops_change, 
                                      pollution_reduction) {
   
-  simulated_data <- data
+  simulated_data <- test_data
+  
   simulated_data$built_area_percentage <- simulated_data$built_area_percentage * 
                                           (1 - built_area_change)
   simulated_data$crops_percentage <- simulated_data$crops_percentage * (1 - crops_change)
@@ -1163,28 +1167,20 @@ simulate_tree_percentage <- function(data, model,
 }
 
 # Reduce built area by 10%, crops by 10%, and pollution by 20%
-simulated_scenario <- simulate_tree_percentage(time_series_data, xgb_model,
-                                               built_area_change = 0.10, 
-                                               crops_change = 0.10, 
-                                               pollution_reduction = 0.20)
+simulated_scenario <- simulate_tree_percentage(test_data, xgb_model, built_area_change = 0.10,
+                                               crops_change = 0.10, pollution_reduction = 0.20)
 ```
 
-![Simulated Optimized Tree Percentage vs Predicted Tree Percentage.](Images/Rplot11.png)
+![**Simulated vs Predicted Tree Percentage by Region on Test Data 2023.** Almost all regions in our dataset fall in the upper part of the scatterplot, indicating tree cover growth. However, there are a few regions where the average simulated tree growth remained unchanged, and some regions where the simulated tree growth, with adjusted predictor variables, was lower than expected. It's important to note that in some regions, tree percentage correlates positively with crops and built area percentages. This means that a reduction in these two variables can lead to a reduction in tree percentage. This typically occurs in regions where built area and crops are geographically disjoint from tree cover, separated by other types of land use.](Images/Rplot22.png)
 
-As we can see from the comparison of predicted and simulated optimized tree percentages, reduction of built areas, crops and CO2 pollution would result in the most observations having higher tree percentage. Since our data is currently in long format, where each observation stands for a single Central European region for a given year, we will summarize the results for each region to take a closer look at winnings we observed for each region over the period of six years from 2018 to 2023.
-
-We created a comparison dataset that calculates both the **predicted tree percentage** from the XGBoost model and the **simulated tree percentage** after applying land-use policy changes. The difference between the two values allows us to identify whether regions experienced improvements or declines in tree coverage based on the simulation. To better understand the effect of these simulated changes at the **regional level**, we computed the average predicted and simulated tree percentages for each region across the six years. This aggregation helped to see broader trends in tree coverage changes, ensuring that the analysis wasn't overly granular.
+As we can see from the comparison of predicted and simulated optimized tree percentages, reduction of built areas, crops and CO2 pollution would result in the most observations having higher tree percentage. We created a comparison dataset that calculates both the **predicted tree percentage** from the XGBoost model and the **simulated tree percentage** after applying land-use policy changes. The difference between the two values allows us to identify whether regions experienced improvements or declines in tree coverage based on the simulation.
 
 ```{r eval=FALSE, include=TRUE}
-regional_comparison <- comparison %>%
-  group_by(shapeName) %>%
-  summarise(
-    avg_predicted_tree_percentage = mean(predicted_xgboost, na.rm = TRUE),
-    avg_simulated_tree_percentage = mean(simulated_tree_percentage, na.rm = TRUE)
-  ) %>%
-  mutate(difference = avg_simulated_tree_percentage - avg_predicted_tree_percentage)
+comparison <- comparison %>%
+  mutate(difference = simulated_tree_percentage - predicted_xgboost)
 
-summary_by_region <- regional_comparison %>%
+# Summarize the total improvements and declines
+summary_by_region <- comparison %>%
   summarise(
     total_improved = sum(difference > 0),
     total_declined = sum(difference < 0),
@@ -1193,13 +1189,11 @@ summary_by_region <- regional_comparison %>%
   )
 ```
 
-![Predictor Optimization Results by Region.](Images/Screenshot%20from%202024-10-05%2016-35-17.png)
+![Predictor Optimization Results by Region.](Images/Screenshot from 2024-10-20 14-25-15.png)
 
-As seen from the output, **91 regions** experienced improvements in tree percentage after the simulated changes in predictor variables. The **average yearly improvement** in regions where tree percentage increase was simulated was 3.06%. On the other hand **19 regions** experienced slight decline in tree cover percentage where yearly decline was -0.767%.
+As seen from the output, **94 regions** experienced improvements in tree percentage after the simulated changes in predictor variables. The **average yearly improvement** in regions where tree percentage increase was simulated was 3.06%. On the other hand **14 regions** experienced slight decline in tree cover percentage where yearly decline was -0.919%.
 
-![**Simulated vs Predicted Tree Percentage by Region.** Almost all regions in our dataset fall in the upper part of the scatterplot, indicating tree cover growth. However, there are a few regions where the average simulated tree growth remained unchanged, and some regions where the simulated tree growth, with adjusted predictor variables, was lower than expected. It's important to note that in some regions, tree percentage correlates positively with crops and built area percentages. This means that a reduction in these two variables can lead to a reduction in tree percentage. This typically occurs in regions where built area and crops are geographically disjoint from tree cover, separated by other types of land use.](Images/Rplot12.png)
-
-In conclusion, land use management will need to carefully consider whether an average yearly tree cover growth of 3% is a desirable goal, or if the trade-off is too steep given the reduction in crops and settlement areas needed to achieve it. While increasing tree cover can be beneficial for the environment, it comes at the cost of important land use for citizens, agriculture, and infrastructure. However, with the implementation of the simulation function, there is flexibility to experiment with different scenarios and values. This allows for informed decision-making on how to best balance tree cover growth with other land use priorities.
+In conclusion, land use management will need to carefully consider whether a yearly tree cover growth of 3% is a desirable goal, or if the trade-off is too steep given the reduction in crops and settlement areas needed to achieve it. While increasing tree cover can be beneficial for the environment, it comes at the cost of important land use for citizens, agriculture, and infrastructure. However, with the implementation of the simulation function, there is flexibility to experiment with different scenarios and values. This allows for informed decision-making on how to best balance tree cover growth with other land use priorities.
 
 # Spatio-temporal Clustering
 
@@ -1347,7 +1341,7 @@ The goal of this comparison is to determine the extent to which tree coverage tr
 
 #### Feature Importance For Clustering
 
-As noted before, small clusters emerge in our data set, taht are mainly surrounded by members of larger clusters and it remained unclear why certain regions were clustered together as the ones in Switzerland, where quite a few neigbouring regions were assigned to different clusters. To investigate this further, we applied the XGBoost algorithm to each cluster individually. The objective was to evaluate the importance of land-use features, such as crop percentage, built area percentage, and water percentage, in determining cluster membership, providing insights into the drivers behind the clustering patterns we observed.
+As noted before, small clusters emerge in our data set, thatt are mainly surrounded by members of larger clusters and it remained unclear why certain regions were clustered together as the ones in Switzerland, where quite a few neigbouring regions were assigned to different clusters. To investigate this further, we applied the XGBoost algorithm to each cluster individually. The objective was to evaluate the importance of land-use features, such as crop percentage, built area percentage, and water percentage, in determining cluster membership, providing insights into the drivers behind the clustering patterns we observed.
 
 ```{r eval=FALSE, include=TRUE}
 importance_list <- list()
