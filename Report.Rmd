@@ -671,11 +671,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                            |                                                            |
+|                                                           |                                                           |
 |------------------------------------|------------------------------------|
-| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
+| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -1334,9 +1334,14 @@ The goal of this comparison is to determine the extent to which tree coverage tr
 
 -   **Multiple Variables**: The clusters become more **fragmented** and **localized**. This fragmentation likely reflects the more complex land-use dynamics in these regions. Regions where built-up areas and agricultural activities are significant now influence cluster membership, showing that the competition for land use plays a larger role than just changes in tree cover. Interestingly, a smaller cluster emerges in Switzerland, grouping a few regions together, which presents an unusual and unexpected pattern in the analysis and needs further inspection to why this assignment would make sense.
 
+|                              |                              |                              |
+|------------------------------|------------------------------|------------------------------|
+| ![](Images/parcoord2018.png) | ![](Images/parcoord2019.png) | ![](Images/parcoord2020.png) |
+| ![](Images/parcoord2021.png) | ![](Images/parcoord2022.png) | ![](Images/parcoord2023.png) |
+
 #### Feature Importance For Clustering
 
-As noted before, small clusters emerge in our data set, thatt are mainly surrounded by members of larger clusters and it remained unclear why certain regions were clustered together as the ones in Switzerland, where quite a few neigbouring regions were assigned to different clusters. To investigate this further, we applied the XGBoost algorithm to each cluster individually. The objective was to evaluate the importance of land-use features, such as crop percentage, built area percentage, and water percentage, in determining cluster membership, providing insights into the drivers behind the clustering patterns we observed.
+As noted before, small clusters emerge in our data set, that are mainly surrounded by members of larger clusters and it remained unclear why certain regions were clustered together as the ones in Switzerland, where quite a few neigbouring regions were assigned to different clusters. To investigate this further, we applied the XGBoost algorithm to each cluster individually. The objective was to evaluate the importance of land-use features, such as crop percentage, built area percentage, and water percentage, in determining cluster membership, providing insights into the drivers behind the clustering patterns we observed.
 
 ```{r eval=FALSE, include=TRUE}
 importance_list <- list()
