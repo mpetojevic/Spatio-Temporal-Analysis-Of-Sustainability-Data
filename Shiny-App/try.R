@@ -86,6 +86,42 @@ data_with_state_boarders <- data_with_state_boarders %>% mutate(country = case_w
   TRUE ~ NA_character_
 )) 
 
+combined_data <- read.csv("combined_treecover_loss_data.csv") %>%
+  mutate(country = ifelse(country == "Czech Republic", "Czechia", country))  %>%
+  group_by(country) %>%
+  summarise(tree_loss = sum(umd_tree_cover_loss__ha, na.rm = TRUE))
+
+countries <- ne_countries(scale = "medium", returnclass = "sf")
+central_europe_countries <- c("Austria", "Czechia", "Germany", "Hungary", 
+                              "Poland", "Slovakia", "Slovenia", "Switzerland")
+geo_data <- countries %>%
+  left_join(combined_data, by = c("name" = "country")) %>%
+  filter(name %in% central_europe_countries) 
+
+
+geo_data_centroids <- st_centroid(geo_data)
+
+tree_loss_palette <- colorRampPalette(brewer.pal(9, "YlOrRd"))
+
+# Plot with binning color scales for tree loss
+ggplot() +
+  geom_sf(data = geo_data, aes(fill = tree_loss), color = "black", size = 0.5) +  
+  geom_text(data = geo_data_centroids, aes(label = paste(name, "\n -", round(tree_loss, 2), "ha"),
+                                           geometry = geometry), 
+            stat = "sf_coordinates", size = 3, color = "black", check_overlap = TRUE) + 
+  scale_fill_gradientn(colors = tree_loss_palette(10),  
+                       breaks = pretty(geo_data$tree_loss, n = 5)) +  
+  labs(
+    title = "Total Tree Cover Loss Across Central Europe Between 2001 and 2023",
+    fill = "Tree Loss (ha)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(hjust = 0.5, size = 16),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
 
 ############################################################### SPATIAL MORAN I ##################################################################################
 
@@ -98,7 +134,7 @@ year_columns <- c("tree_percentage_2018", "tree_percentage_2019", "tree_percenta
                   "tree_percentage_2021", "tree_percentage_2022", "tree_percentage_2023")
 
 
-#Moran scater plots
+#Moran scatter plots
 
 par(mfrow = c(3, 2))
 for (year_col in year_columns) {
@@ -150,6 +186,26 @@ ggplot(morans_i_data, aes(x = as.factor(year), y = morans_i_stat, fill = year)) 
        y = "Moran's I Statistic") +
   theme_minimal() +
   theme(legend.position = "none")
+
+str(morans_i_data)
+
+# No bars
+ggplot(morans_i_data, aes(y = as.factor(year), x = morans_i_stat)) +
+  geom_segment(aes(y = as.factor(year), yend = as.factor(year), 
+                   x = 0, xend = morans_i_stat), color = "black", size = 1) +
+  geom_point(aes(x = morans_i_stat, y = as.factor(year)), color = "black", size = 3) + 
+  geom_text(aes(label = paste0("Moran's I: ", round(morans_i_stat, 3))), 
+            hjust = -0.3, size = 3.5) +  # Label next to the lines
+  geom_text(aes(label = paste0("p-Value: ", scientific(p_value))), 
+            vjust = -1, hjust = 1.2, color = "black", size = 3) +  
+  labs(title = "Moran's I for Tree Percentage by Year (2018-2023)",
+       y = "Year",
+       x = "Moran's I Statistic") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(0, max(morans_i_data$morans_i_stat) + 0.05))  
+
+
 
 
 #################################################### MONTE CARLO GLOBAL MORAN APPROACH #############################################################################
@@ -228,7 +284,6 @@ for (i in seq_along(year_columns)) {
 
 year_plots_list <- list()
 
-# Loop through each year and create the four plots for each year
 for (year_col in year_columns) {
   
   year_label <- gsub("tree_percentage_", "", year_col)
@@ -243,13 +298,14 @@ for (year_col in year_columns) {
     tm_polygons(col = paste0("Ii_", year_col), title = "Local Moran's I", style = "quantile") +
     tm_layout(legend.outside = TRUE)
   
+  # Commented this out bc Z scores give us the same information as p values!
   # 3. Z-scores for the selected year (Categorized into Negative, No, Positive SAC)
-  p3 <- tm_shape(data_with_state_boarders) +
-    tm_polygons(col = paste0("ZIi_", year_col), title = "Z-score",
-                breaks = c(-Inf, 1.65, Inf),   
-                labels = c("Z < 1.65", "Z >= 1.65"),  
-                palette = c("blue", "red")) +  # Blue for Z < 1.65, Red for Z >= 1.65
-    tm_layout(legend.outside = TRUE)
+  #p3 <- tm_shape(data_with_state_boarders) +
+   # tm_polygons(col = paste0("ZIi_", year_col), title = "Z-score",
+    #            breaks = c(-Inf, 1.65, Inf),   
+     #           labels = c("Z < 1.65", "Z >= 1.65"),  
+      #          palette = c("blue", "red")) +  # Blue for Z < 1.65, Red for Z >= 1.65
+    #tm_layout(legend.outside = TRUE)
   
   # 4. p-values for the selected year
   p4 <- tm_shape(data_with_state_boarders) +
@@ -258,7 +314,7 @@ for (year_col in year_columns) {
                 palette = c("red", "white")) +  
     tm_layout(legend.outside = TRUE)
   
-  combined_plot <- tmap_arrange(p1, p2, p3, p4)
+  combined_plot <- tmap_arrange(p1, p2, p4, ncol = 3)
   
   year_plots_list[[year_label]] <- combined_plot
 }
@@ -338,8 +394,14 @@ print(combined_sac_plots)
 
 #2018
 
-mp <- moran.plot(as.vector(scale(data_with_state_boarders$tree_percentage_2018)), lw)
+mp <- moran.plot(as.vector(scale(data_with_state_boarders$tree_percentage_2018)), lw, ylab = "Spatially Lagged Scaled tree Percentage for Year 2018", xlab = "Scaled Tree Percentage in 2018")
 head(mp)
+
+outliers <- which(mp$is_inf) 
+text(mp$x[outliers], mp$wx[outliers], 
+     labels = data_with_state_boarders$shapeName[outliers], 
+     pos = 4, col = "blue", cex = 0.8) 
+
 
 look_up <- data_with_state_boarders %>%
   mutate(x = mp$x, wp = mp$wx) %>%
@@ -620,7 +682,20 @@ ggplot(time_series_data %>% filter(shapeName == "Győr-Moson-Sopron"),
   geom_line() +
   labs(title = "Tree Percentage Over Time for Győr-Moson-Sopron", x = "Year", y = "Tree Percentage") +
   theme_minimal() +
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  scale_y_continuous(limits = c(15, 18)) 
+ggsave("gyor_plot.png", width = 6, height = 3) 
+
+
+ggplot(time_series_data %>% filter(shapeName == "Thüringen"), 
+       aes(x = year, y = tree_percentage, group = shapeName, color = shapeName)) +
+  geom_line(size = 1) +
+  labs(title = "Tree Percentage Over Time for Thüringen", x = "Year", y = "Tree Percentage") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_y_continuous(limits = c(28, 33))
+
+ggsave("thuringen_plot.png", width = 6, height = 3) 
 
 time_series_data_with_geometry <- data_with_state_boarders %>% 
   select(shapeName, geometry) %>%
@@ -712,6 +787,32 @@ ggplot(time_series_data, aes(x = predicted_lm, y = tree_percentage)) +
   theme_minimal() # bad fitting
 
 
+############################################################# LINEAR TRAIN + TEST ################################################################################
+
+train_data <- time_series_data %>% filter(year < 2023)
+test_data <- time_series_data %>% filter(year == 2023)
+
+# Prepare data matrices
+lm_model <- lm(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage
+               + flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage + burned_area
+               + CO2_total + PM25_total + TPC_total + NMHC_total + OC_total + CH4_total + SO2_total + BC_total,
+               data = train_data)
+
+# Make predictions on the test data (2023)
+test_data$predicted_lm <- predict(lm_model, newdata = test_data)
+
+rmse_lm <- sqrt(mean((test_data$tree_percentage - test_data$predicted_lm)^2))
+print(paste("RMSE for Linear Model on test data (2023):", rmse_lm))
+
+ggplot(test_data, aes(x = predicted_lm, y = tree_percentage)) +
+  geom_point(color = "gray", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Tree Percentage (Linear Model, Test Data 2023)",
+       x = "Predicted Tree Percentage",
+       y = "Actual Tree Percentage") +
+  theme_minimal()
+
+
 ####################################################### RANDOM FOREST REFGRESSION ################################################################################
 
 model_rf <- randomForest(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage
@@ -733,6 +834,35 @@ ggplot(time_series_data, aes(x = predicted_rf, y = tree_percentage)) +
   theme_minimal() # bad fitting
 
 
+######################################################### RF TRAIN + TEST ################################################################################
+
+train_data <- time_series_data %>% filter(year < 2023)
+test_data <- time_series_data %>% filter(year == 2023)
+
+# Fit Random Forest model on training data
+model_rf <- randomForest(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage
+                         + flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage + burned_area
+                         + CO2_total + PM25_total + TPC_total + NMHC_total + OC_total + CH4_total + SO2_total
+                         + BC_total, data = train_data, ntree = 500)  # Increase ntree for better results
+
+test_data$predicted_rf <- predict(model_rf, newdata = test_data)
+
+rmse_rf <- sqrt(mean((test_data$tree_percentage - test_data$predicted_rf)^2))
+print(paste("RMSE for Random Forest on test data (2023):", rmse_rf))
+
+ggplot(test_data, aes(x = predicted_rf, y = tree_percentage)) +
+  geom_point(alpha = 0.5, color = "gray") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Tree Percentage (Random Forest, Test Data 2023)",
+       x = "Predicted Tree Percentage",
+       y = "Actual Tree Percentage") +
+  theme_minimal()
+
+# Plot variable importance
+varImpPlot(model_rf, main = "Variable Importance in Random Forest")
+
+
+
 ######################################################### NNET REGRESSION #################################################################################
 
 nn_model <- nnet(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
@@ -746,6 +876,31 @@ ggplot(time_series_data, aes(x = predicted_nnet, y = tree_percentage)) +
   geom_point(color = "gray", alpha = 0.6) +
   geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  # Reference line (y = x)
   labs(title = "Predicted vs Actual Tree Percentage (Neural Network)",
+       x = "Predicted Tree Percentage",
+       y = "Actual Tree Percentage") +
+  theme_minimal()
+
+
+######################################################## NNET TEST TRAIN ##################################################################################
+
+train_data <- time_series_data %>% filter(year < 2023)
+test_data <- time_series_data %>% filter(year == 2023)
+
+nn_model <- nnet(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                   flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage + burned_area +
+                   CO2_total + PM25_total + TPC_total + NMHC_total + OC_total + CH4_total + SO2_total + BC_total,
+                 data = train_data, size = 10, linout = TRUE, maxit = 500)
+
+# Make predictions on the test data (2023)
+test_data$predicted_nnet <- predict(nn_model, test_data)
+
+rmse_nnet <- sqrt(mean((test_data$tree_percentage - test_data$predicted_nnet)^2))
+print(paste("RMSE for Neural Network on test data (2023):", rmse_nnet))
+
+ggplot(test_data, aes(x = predicted_nnet, y = tree_percentage)) +
+  geom_point(color = "gray", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  # Reference line (y = x)
+  labs(title = "Predicted vs Actual Tree Percentage (Neural Network, Test Data 2023)",
        x = "Predicted Tree Percentage",
        y = "Actual Tree Percentage") +
   theme_minimal()
@@ -793,23 +948,74 @@ ggplot(importance_df, aes(x = reorder(Feature, Gain), y = Gain)) +
        y = "Importance (Gain)") +
   theme_minimal()
 
+
+######################################### TEST XGBOOST ##########################################################################################################
+
+train_data <- time_series_data %>% filter(year < 2023)
+test_data <- time_series_data %>% filter(year == 2023)
+
+# Prepare data matrices
+train_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                               flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage + burned_area +
+                               CO2_total + PM25_total + TPC_total + NMHC_total + OC_total + CH4_total + SO2_total + BC_total,
+                             data = train_data)
+
+test_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                              flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage + burned_area +
+                              CO2_total + PM25_total + TPC_total + NMHC_total + OC_total + CH4_total + SO2_total + BC_total,
+                            data = test_data)
+
+# Train the model on the training data (2018-2022)
+xgb_model <- xgboost(data = train_matrix, label = train_data$tree_percentage, nrounds = 100, objective = "reg:squarederror")
+
+# Predict on the test data (2023)
+test_data$predicted_xgboost <- predict(xgb_model, test_matrix)
+
+# Calculate RMSE for the test set
+rmse <- sqrt(mean((test_data$tree_percentage - test_data$predicted_xgboost)^2))
+print(paste("RMSE on test data (2023):", rmse))
+
+ggplot(test_data, aes(x = predicted_xgboost, y = tree_percentage)) +
+  geom_point(color = "gray", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Tree Percentage (Test Data, 2023)",
+       x = "Predicted Tree Percentage",
+       y = "Actual Tree Percentage") +
+  theme_minimal()
+
+
+######################################################## CORRPLOT ##############################################################################################
+
+library(corrplot)
+
+corr_data <- time_series_data %>%
+  select(tree_percentage, built_area_percentage, crops_percentage, rangeland_percentage, water_percentage,
+         flooded_vegetation_percentage, bare_ground_percentage, snow_ice_percentage, burned_area, CO2_total,
+         PM25_total, TPC_total, NMHC_total, OC_total, CH4_total, SO2_total, BC_total)
+
+corr_matrix <- cor(corr_data, use = "complete.obs")
+
+corrplot(corr_matrix, method = "circle", type = "lower", tl.col = "black")
+
+
+
 ####################################################### MODEL COMPARISON #######################################################################################
 
 rsquared <- function(actual, predicted) {
   cor(actual, predicted) ^ 2
 }
 
-# R² for linear model
-rsquared_lm <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_lm)
+# R² for linear model on test data
+rsquared_lm <- rsquared(test_data$tree_percentage, test_data$predicted_lm)
 
-# R² for nnet model
-rsquared_nnet <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_nnet)
+# R² for nnet model on test data
+rsquared_nnet <- rsquared(test_data$tree_percentage, test_data$predicted_nnet[,1])
 
-# R² for Random Forest model
-rsquared_rf <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_rf)
+# R² for Random Forest model on test data
+rsquared_rf <- rsquared(test_data$tree_percentage, test_data$predicted_rf)
 
-# R² for XGBoost model
-rsquared_xgb <- rsquared(time_series_data$tree_percentage, time_series_data$predicted_xgboost)
+# R² for XGBoost model on test data
+rsquared_xgb <- rsquared(test_data$tree_percentage, test_data$predicted_xgboost)
 
 # Print R² values for comparison
 cat("R² - Linear Model:", rsquared_lm, "\n")
@@ -817,10 +1023,202 @@ cat("R² - Random Forest:", rsquared_rf, "\n")
 cat("R² - NNet Model:", rsquared_nnet, "\n")
 cat("R² - XGBoost:", rsquared_xgb, "\n")
 
+
+###################################################### RMSE  ######################################################################################
+
+rmse_lm <- sqrt(mean((test_data$tree_percentage - test_data$predicted_lm)^2))
+rmse_rf <- sqrt(mean((test_data$tree_percentage - test_data$predicted_rf)^2))
+rmse_nnet <- sqrt(mean((test_data$tree_percentage - test_data$predicted_nnet)^2))
+rmse <- sqrt(mean((test_data$tree_percentage - test_data$predicted_xgboost)^2))
+
+cat("RMSE for Linear Model on test data (2023):", rmse_lm, "\n")
+cat("RMSE for Random Forest on test data (2023):", rmse_rf, "\n")
+cat("RMSE for Neural Network on test data (2023):", rmse_nnet, "\n")
+cat("RMSE on test data (2023):", rmse, "\n")
+
+
+###################################################### PREDICT TREE CHANGE ############################################################################
+
+land_use_vars <- c("tree_percentage", "built_area_percentage", "crops_percentage", 
+                   "rangeland_percentage", "water_percentage", "flooded_vegetation_percentage",
+                   "bare_ground_percentage", "snow_ice_percentage")
+
+calculate_yearly_change <- function(data, variable, start_year, end_year) {
+  for (year in start_year:end_year) {
+    col_current <- paste0(variable, "_", year)
+    col_base <- paste0(variable, "_", year - 1)
+    col_change <- paste0(variable, "_change_", year - 1, "_", year)
+    
+    data[[col_change]] <- data[[col_current]] - data[[col_base]]
+  }
+  return(data)
+}
+
+start_year <- 2019  
+end_year <- 2023 
+
+for (variable in land_use_vars) {
+  data <- calculate_yearly_change(data, variable, start_year, end_year)
+}
+
+
+data_long <- data %>%
+  select(shapeName, contains("_change_")) %>%  
+  pivot_longer(cols = contains("_change_"), names_to = "Variable", values_to = "Change") %>%
+  # Extract the second year (2019 from tree_percentage_change_2018_2019)
+  mutate(Year = as.numeric(sub(".*_change_\\d{4}_(\\d{4})$", "\\1", Variable)))
+
+
+data_long <- data_long %>%
+  mutate(ChangeType = sub("_change_\\d{4}_\\d{4}$", "", Variable)) %>%  
+  select(-Variable) %>%  
+  mutate(ChangeType = as.factor(ChangeType)) 
+
+data_long <- data_long %>%
+  pivot_wider(names_from = ChangeType, values_from = Change)
+
+
+################## XG BOOST
+
+train_data <- data_long %>% filter(Year < 2023)
+test_data <- data_long %>% filter(Year == 2023)
+
+train_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                               flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage, 
+                             data = train_data)
+
+test_matrix <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                              flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage, 
+                            data = test_data)
+
+xgb_model <- xgboost(data = train_matrix, label = train_data$tree_percentage, nrounds = 100, objective = "reg:squarederror", verbose = 0)
+
+test_data$predicted_xgboost <- predict(xgb_model, test_matrix)
+
+ggplot(test_data, aes(x = predicted_xgboost, y = tree_percentage)) +
+  geom_point(color = "gray", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Tree Percentage Change (2023)",
+       x = "Predicted Tree Percentage Change",
+       y = "Actual Tree Percentage Change") +
+  theme_minimal()
+
+
+test_data$residuals <- test_data$tree_percentage - test_data$predicted_xgboost
+
+summary(test_data$residuals)
+
+threshold <- 1 
+
+outliers <- test_data %>% filter(abs(residuals) > threshold)
+
+print(outliers)
+
+library(ggrepel)
+
+ggplot(test_data, aes(x = predicted_xgboost, y = tree_percentage)) +
+  geom_point(color = "gray", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  geom_point(data = outliers, aes(x = predicted_xgboost, y = tree_percentage), color = "red", size = 2) +  
+  geom_text_repel(data = outliers, aes(label = shapeName), size = 3, color = "blue", max.overlaps = 10) +  
+  coord_cartesian(xlim = c(min(test_data$predicted_xgboost) - 0.5, max(test_data$predicted_xgboost) + 0.5), 
+                  ylim = c(min(test_data$tree_percentage) - 0.5, max(test_data$tree_percentage) + 0.5)) +  
+  labs(title = "Predicted vs Actual Tree Percentage Change (2023) with Outliers Highlighted",
+       x = "Predicted Tree Percentage Change",
+       y = "Actual Tree Percentage Change") +
+  theme_minimal()
+
+
+########################### PREDICT 2024
+
+test_data_2024 <- test_data  
+
+test_matrix_2024 <- model.matrix(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                                   flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage, 
+                                 data = test_data_2024)
+
+test_data_2024$predicted_xgboost_2024 <- predict(xgb_model, test_matrix_2024)
+
+print(test_data_2024$predicted_xgboost_2024)
+
+ggplot(test_data_2024, aes(x = shapeName, y = predicted_xgboost_2024)) +
+  geom_point(color = "blue", size = 3) +
+  labs(title = "Predicted Tree Percentage Change for 2024",
+       x = "State/Region",
+       y = "Predicted Tree Percentage Change") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+l <- train_data %>% select (shapeName, tree_percentage, Year)
+
+
+m <- test_data_2024 %>% select(shapeName, tree_percentage, Year)
+
+combined_data <- rbind(l, m)
+
+test_data_2024$Year <- 2024
+test_data_2024$tree_percentage <- test_data_2024$predicted_xgboost_2024
+
+k <- test_data_2024 %>% select(shapeName, tree_percentage, Year)
+
+ccc <- rbind(combined_data, k)
+
+
+ggplot(ccc, aes(x = Year, y = tree_percentage, group = shapeName, color = shapeName)) +
+  geom_line() + 
+  geom_point(size = 2) + 
+  labs(title = "Tree Percentage Change: Actual (2019-2023) and Predicted (2024)",
+       x = "Year", y = "Tree Percentage Change") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+###################################### TRY LINEAR
+
+train_data <- data_long %>% filter(Year < 2023)
+test_data <- data_long %>% filter(Year == 2023)
+
+lm_model <- lm(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                 flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage, 
+               data = train_data)
+test_data$predicted_lm <- predict(lm_model, newdata = test_data)
+
+ggplot(test_data, aes(x = predicted_lm, y = tree_percentage)) +
+  geom_point(color = "black", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Tree Percentage Change (2023) using Linear Model",
+       x = "Predicted Tree Percentage Change",
+       y = "Actual Tree Percentage Change") +
+  theme_minimal()
+
+
+################################################# TRY RANDOM FOREST -> worse
+
+train_data <- data_long %>% filter(Year < 2023)
+test_data <- data_long %>% filter(Year == 2023)
+
+rf_model <- randomForest(tree_percentage ~ built_area_percentage + crops_percentage + rangeland_percentage + water_percentage +
+                           flooded_vegetation_percentage + bare_ground_percentage + snow_ice_percentage, 
+                         data = train_data, 
+                         ntree = 500, 
+                         importance = TRUE)
+
+test_data$predicted_rf <- predict(rf_model, test_data)
+
+ggplot(test_data, aes(x = predicted_rf, y = tree_percentage)) +
+  geom_point(color = "black", alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Tree Percentage Change (2023) using Random Forest",
+       x = "Predicted Tree Percentage Change",
+       y = "Actual Tree Percentage Change") +
+  theme_minimal()
+
 ####################################################### SIMULATIONS WITH XGBOOST ####################################################################
 
-simulate_tree_percentage <- function(data, model, built_area_change, crops_change, pollution_reduction) {
-  simulated_data <- data
+simulate_tree_percentage <- function(test_data, model, built_area_change, crops_change, pollution_reduction) {
+  simulated_data <- test_data
+  
   simulated_data$built_area_percentage <- simulated_data$built_area_percentage * (1 - built_area_change)
   simulated_data$crops_percentage <- simulated_data$crops_percentage * (1 - crops_change)
   simulated_data$CO2_total <- simulated_data$CO2_total * (1 - pollution_reduction)
@@ -836,40 +1234,26 @@ simulate_tree_percentage <- function(data, model, built_area_change, crops_chang
 }
 
 # Reduce built area by 10%, crops by 10%, and pollution by 20%
-simulated_scenario <- simulate_tree_percentage(time_series_data, xgb_model, built_area_change = 0.10, crops_change = 0.10, pollution_reduction = 0.20)
+simulated_scenario <- simulate_tree_percentage(test_data, xgb_model, built_area_change = 0.10, crops_change = 0.10, pollution_reduction = 0.20)
 
-head(simulated_scenario$predicted_tree_percentage)
-
-
-# Predicted vs simulated
-comparison <- time_series_data %>%
+comparison <- test_data %>%
   select(shapeName, tree_percentage, predicted_xgboost) %>%
   mutate(simulated_tree_percentage = simulated_scenario$predicted_tree_percentage)
 
-head(comparison)
-
+# Calculate the difference between simulated and predicted values
 comparison <- comparison %>%
   mutate(difference = simulated_tree_percentage - predicted_xgboost)
 
 ggplot(comparison, aes(x = predicted_xgboost, y = simulated_tree_percentage, color = difference)) +
   geom_point() +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
-  scale_color_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0) +
-  labs(title = "Simulated vs Predicted Tree Percentage",
+  scale_color_gradient2(low = "red", mid = "pink", high = "blue", midpoint = 0) +
+  labs(title = "Simulated vs Predicted Tree Percentage (Test Data 2023)",
        x = "Current Predicted Tree Percentage",
        y = "Simulated Optimized Tree Percentage",
        color = "Change") +
   theme_minimal()
 
-
-# Group by region and calculate average predicted and simulated values for each region
-regional_comparison <- comparison %>%
-  group_by(shapeName) %>%
-  summarise(
-    avg_predicted_tree_percentage = mean(predicted_xgboost, na.rm = TRUE),
-    avg_simulated_tree_percentage = mean(simulated_tree_percentage, na.rm = TRUE)
-  ) %>%
-  mutate(difference = avg_simulated_tree_percentage - avg_predicted_tree_percentage)
 
 help <- regional_comparison %>% filter(difference < 0)
 
@@ -877,7 +1261,7 @@ help <- help %>% inner_join(correlation_results, "shapeName")
 help <- help %>% select (-cor_rangeland)
 
 # Summarize the total improvements and declines
-summary_by_region <- regional_comparison %>%
+summary_by_region <- comparison %>%
   summarise(
     total_improved = sum(difference > 0),
     total_declined = sum(difference < 0),
@@ -891,7 +1275,7 @@ print(summary_by_region)
 ggplot(regional_comparison, aes(x = avg_predicted_tree_percentage, y = avg_simulated_tree_percentage, color = difference)) +
   geom_point() +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
-  scale_color_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0) +
+  scale_color_gradient2(low = "red", mid = "yellow", high = "blue", midpoint = 0) +
   labs(title = "Simulated vs Predicted Tree Percentage (by Region)",
        x = "Average Predicted Tree Percentage",
        y = "Average Simulated Tree Percentage",
@@ -1074,6 +1458,67 @@ ggplot(data_with_state_boarders) +
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 10)
   )
+
+
+######################################################### CLUSTERING VISUALIZATION MULTIPLE VARS ##############################################################
+
+library(GGally)
+
+data$cluster <- pam_result$clustering
+#time_series_data <- time_series_data %>% select(-c(cluster))
+
+time_series_data <- data %>%
+  select(shapeName, cluster) %>%
+  left_join(time_series_data,  by = "shapeName")
+
+
+time_series_data <- time_series_data %>%
+  mutate(across(c(tree_percentage, water_percentage, crops_percentage, built_area_percentage, rangeland_percentage), 
+                as.numeric))  # Ensure numeric type
+
+time_series_data <- time_series_data %>%
+  filter(!is.na(tree_percentage) & !is.na(water_percentage) & !is.na(crops_percentage) & 
+           !is.na(built_area_percentage) & !is.na(rangeland_percentage))  # Remove rows with NAs
+
+time_series_data <- time_series_data %>%
+  mutate(cluster = as.factor(cluster))
+
+generate_parallel_plot <- function(year_data, year) {
+  ggparcoord(
+    data = year_data, 
+    match(c('tree_percentage', 'water_percentage', 'crops_percentage', 'built_area_percentage', 'rangeland_percentage'),
+          names(year_data)
+    ),
+    groupColumn = "cluster",  # Group by cluster
+    scale = "globalminmax",  
+    alphaLines = 0.6  
+  ) +
+    labs(title = paste("Parallel Coordinate Plot for Clusters in Year", year),
+         color = "Cluster") +
+    theme_minimal() +
+    theme(legend.position = "bottom")  
+}
+
+years <- 2018:2023
+plots_list <- list()
+
+for (year in years) {
+  year_data <- time_series_data %>% filter(year == !!year)  
+  
+  if(nrow(year_data) > 0) {  
+    plot <- generate_parallel_plot(year_data, year)  
+    plots_list[[paste0("plot_", year)]] <- plot  
+  }
+}
+
+
+plots_list[["plot_2018"]]
+plots_list[["plot_2019"]]
+plots_list[["plot_2020"]]
+plots_list[["plot_2021"]]
+plots_list[["plot_2022"]]
+plots_list[["plot_2023"]]
+
 
 # Feature importance for clusters
 
