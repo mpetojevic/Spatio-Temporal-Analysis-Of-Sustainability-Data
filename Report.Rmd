@@ -3,12 +3,12 @@ title: "Spatio Temporal Analysis Of Sustainability Data in Central Europe"
 author: "Marijana Petojevic"
 date: "26.09.2024"
 output:
-  word_document:
-    toc: yes
-    toc_depth: '4'
   pdf_document:
     toc: yes
     toc_depth: 4
+  word_document:
+    toc: yes
+    toc_depth: '4'
   html_document:
     toc: yes
     toc_depth: '4'
@@ -327,15 +327,7 @@ For this project, I extracted only the relevant data for Central European region
 
 ## Dataset Representation
 
-The structure of created data set looks as following:
-
-```{r include=FALSE}
-sustainability_data <- read.csv("~/Uni/2024S/Bachelor/Spatio-Temporal-Analysis-Of-Sustainability-Data/Central Europe Analysis/sustainability_data_central_europe.csv")
-```
-
-```{r echo=FALSE}
-str(sustainability_data)
-```
+Dataset can be viewed and downloaded from [here](https://github.com/mpetojevic/Spatio-Temporal-Analysis-Of-Sustainability-Data/blob/main/Central%20Europe%20Analysis/sustainability_data_central_europe.csv).
 
 ## Global Forest Watch Dashboard Data
 
@@ -676,11 +668,11 @@ data_with_state_boarders[(data_with_state_boarders$p_value_ts_tree_percentage_20
 
 We will repeat this process for each year and we than get corresponding plot:
 
-|                                                           |                                                           |
+|                                                            |                                                            |
 |------------------------------------|------------------------------------|
-| ![Moran's I Clusters for 2018](Images/clustersap2018.png) | ![Moran's I Clusters for 2020](Images/clustersap2020.png) |
-| ![Moran's I Clusters for 2021](Images/clustersap2021.png) | ![Moran's I Clusters for 2022](Images/clustersap2022.png) |
-| ![Moran's I Clusters for 2023](Images/clustersap2023.png) |                                                           |
+| ![Moran\'s I Clusters for 2018](Images/clustersap2018.png) | ![Moran\'s I Clusters for 2020](Images/clustersap2020.png) |
+| ![Moran\'s I Clusters for 2021](Images/clustersap2021.png) | ![Moran\'s I Clusters for 2022](Images/clustersap2022.png) |
+| ![Moran\'s I Clusters for 2023](Images/clustersap2023.png) |                                                            |
 
 The plots reveal similar patterns to those observed in the previous section, where we used the `localmoran()` test to assess positive, negative, and no spatial autocorrelation. This time, we can see the specific reasons why each region exhibits positive or negative spatial autocorrelation. The red areas in the plots represent regions with positive spatial autocorrelation, where high-value areas are surrounded by other high-value areas. These include regions in southern Austria, Slovenia, and Slovakia which all experience high tree coverage throughout the years.
 
@@ -853,9 +845,9 @@ correlation_results <- time_series_data %>%
 
 ### Accessing Correlation
 
-|                                          |                                  |                                           |
-|-------------------------|---------------------|--------------------------|
-| ![](Images/treecropcor.png){width="218"} | ![](Images/treerangelandcor.png) | ![](Images/treebuiltcor.png){width="227"} |
+|                                          |                                               |                                           |
+|------------------------|-----------------------|--------------------------|
+| ![](Images/treecropcor.png){width="206"} | ![](Images/treerangelandcor.png){width="216"} | ![](Images/treebuiltcor.png){width="207"} |
 
 : Correlation of Tree Percentage and Crops percentage, Rangeland Percentage and Built Area Percentage.
 
@@ -1189,7 +1181,7 @@ summary_by_region <- comparison %>%
   )
 ```
 
-![Predictor Optimization Results by Region.](Images/Screenshot from 2024-10-20 14-25-15.png)
+![Predictor Optimization Results by Region.](Images/Screenshot%20from%202024-10-20%2014-25-15.png)
 
 As seen from the output, **94 regions** experienced improvements in tree percentage after the simulated changes in predictor variables. The **average yearly improvement** in regions where tree percentage increase was simulated was 3.06%. On the other hand **14 regions** experienced slight decline in tree cover percentage where yearly decline was -0.919%.
 
